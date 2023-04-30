@@ -14,9 +14,9 @@ memory:
 gnn:
   - arch: 'GIL'
     layer: 2
-    att_head: 2
-    dim_time: 200
-    dim_out: 200
+    att_head: 1
+    dim_time: 100
+    dim_out: 100
     t_c: True
 train:
   - epoch: 100

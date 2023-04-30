@@ -123,14 +123,14 @@ class HypLinear(nn.Module):
     Hyperbolic linear layer.
     """
 
-    def __init__(self, in_features, out_features, c, dropout, use_bias):
+    def __init__(self, in_features, out_features, c, dropout, bias):
         super(HypLinear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.c = c
         self.ball = PoincareBall(self.c)
         self.dropout = dropout
-        self.use_bias = use_bias
+        self.use_bias = bias
         self.bias = nn.Parameter(torch.Tensor(out_features))
         self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
         self.reset_parameters()
@@ -142,6 +142,7 @@ class HypLinear(nn.Module):
     def forward(self, x):
         drop_weight = F.dropout(self.weight, self.dropout, training=self.training)
         res = self.ball.mobius_matvec(drop_weight, x)
+        print(self.ball.projx(res), res)
         assert self.ball.projx(res) == res
         if self.use_bias:
             bias = self.bias.view(1, -1)
