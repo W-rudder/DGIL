@@ -8,8 +8,6 @@ from geoopt.manifolds.stereographic import PoincareBall
 import torch.nn.functional as F
 import geoopt
 
-ball = PoincareBall(c=1)
-
 class TimeEncode(torch.nn.Module):
 
     def __init__(self, dim):
@@ -178,197 +176,6 @@ class JODIETimeEmbedding(torch.nn.Module):
         rst = h * (1 + self.time_emb(time_diff.unsqueeze(1)))
         return rst
 
-class HGATLayer(torch.nn.Module):
-    def __init__(self, dim_node_feat, dim_edge_feat, dim_time, num_head, dropout, att_dropout, dim_out, combined=False, negative_slope=0.2, residual=False, activation=None, allow_zero_in_degree=False, bias=True, dist=True):
-        super(HGATLayer, self).__init__()
-        self.num_head = num_head
-        self.dim_node_feat = dim_node_feat
-        self.dim_edge_feat = dim_edge_feat
-        self.dim_time = dim_time
-        self.dim_out = dim_out
-        self.feat_drop = nn.Dropout(dropout)
-        self.attn_drop = nn.Dropout(att_dropout)
-        self.leaky_relu = nn.LeakyReLU(negative_slope)
-        self.combined = combined
-        self.dist = dist
-        self.bias = bias
-        self.activation = activation
-        if dim_time > 0:
-            self.time_enc = TimeEncode(dim_time)
-
-        if dim_node_feat + dim_time > 0:
-            self._in_src_feats, self._in_dst_feats = dim_time, dim_time
-
-        self._out_feats = self.dim_out // self.num_head
-
-        self.fc_src = MobiusLinear(
-            self._in_src_feats, self._out_feats * num_head, bias=bias
-        )
-        self.fc_dst = MobiusLinear(
-            self._in_src_feats, self._out_feats * num_head, bias=bias
-        )
-        self.fc_edge = MobiusLinear(
-            dim_edge_feat, self._out_feats * num_head, bias=bias
-        )
-        self.attn = nn.Parameter(
-            torch.FloatTensor(size=(1, num_head, self._out_feats))
-        )
-
-        if residual:
-            if self._in_dst_feats != self._out_feats * num_head:
-                self.res_fc = nn.Linear(
-                    self._in_dst_feats, num_head * self._out_feats, bias=bias
-                )
-            else:
-                self.res_fc = Identity()
-        else:
-            self.register_buffer("res_fc", None)
-
-        self.reset_parameters()
-
-        
-    def reset_parameters(self):
-        gain = nn.init.calculate_gain('relu')
-        nn.init.xavier_normal_(self.fc_src.weight, gain=gain)
-        nn.init.xavier_normal_(self.fc_dst.weight, gain=gain)
-        nn.init.xavier_normal_(self.fc_edge.weight, gain=gain)
-        if self.bias:
-            nn.init.constant_(self.fc_edge.bias, 0)
-        nn.init.xavier_normal_(self.attn, gain=gain)
-        if isinstance(self.res_fc, nn.Linear):
-            nn.init.xavier_normal_(self.res_fc.weight, gain=gain)
-            if self.bias:
-                nn.init.constant_(self.res_fc.bias, 0)
-
-    def forward(self, b, edge_weight=None, get_attention=False):
-        assert(self.dim_time + self.dim_node_feat + self.dim_edge_feat > 0)
-        if b.num_edges() == 0:
-            return torch.zeros((b.num_dst_nodes(), self.dim_out), device=torch.device('cuda:0'))
-        if self.dim_time > 0:
-            time = torch.cat([torch.zeros(b.num_dst_nodes(), dtype=torch.float32).cuda(), b.edata['dt']])
-            time_feat = self.time_enc(time)
-            time_feat = ball.projx(time_feat)
-        
-        # 1. 节点特征就只考虑本来的和时间特征，src是所有的特征，dst是src[:b.num_dst_nodes()]
-        # 2. edge特征用来做attn
-        if self.dim_node_feat == 0:
-            src_feat = time_feat
-        else:
-            # src_feat = torch.cat([time_feat, b.srcdata['h']], dim=1)
-            src_feat = ball.mobius_add(b.srcdata['hyper'], time_feat)
-        h_src = self.feat_drop(src_feat)
-        h_dst = self.feat_drop(src_feat)[:b.num_dst_nodes()]
-
-        feat_src = self.fc_src(h_src)
-        feat_dst = self.fc_dst(h_dst)
-
-        feat_src_e = ball.logmap0(feat_src).view(
-            -1, self.num_head, self._out_feats)
-        feat_dst_e = ball.logmap0(feat_dst).view(
-            -1, self.num_head, self._out_feats)
-        
-        def get_dist(edges):
-            dist = ball.dist(edges.src['ll'], edges.dst['lr'])
-            dist = 1 / (1e-15 + dist)
-            return {'dist' : dist}
-        
-        b.srcdata.update({'ll': feat_src, 'el': feat_src_e})# (num_src_edge, num_heads, out_dim)
-        b.dstdata.update({'lr': feat_dst, 'er': feat_dst_e})
-        b.apply_edges(dgl.function.u_add_v('el', 'er', 'e'))
-        e = (b.edata.pop('e') * self.attn).sum(dim=-1).unsqueeze(dim=2)# (num_edge, num_heads, 1)
-        if self.dist:
-            b.apply_edges(get_dist)
-            dist = b.edata.pop('dist').view(-1, 1)
-            assert dist.shape[0] == e.shape[0]
-            dist = dgl.ops.edge_softmax(b, dist).reshape(-1, 1, 1)
-            e = e * dist
-        # compute softmax
-        e = self.leaky_relu(e)
-        b.edata['a'] = self.attn_drop(dgl.ops.edge_softmax(b, e)) # (num_edge, num_heads)
-        # message passing
-        b.update_all(dgl.function.u_mul_e('el', 'a', 'm'),
-                            dgl.function.sum('m', 'ft'))
-        rst = b.dstdata['ft'].view(-1, self.dim_out)
-
-        # residual
-        if self.res_fc is not None:
-            resval = self.res_fc(h_dst).view(h_dst.shape[0], -1, self._out_feats)
-            rst = rst + resval
-        # activation
-        if self.activation:
-            rst = self.activation(rst)
-
-        if get_attention:
-            return rst, b.edata['a']
-        else:
-            #print(ball.expmap0(rst), ball.projx(rst))
-            #assert ball.expmap0(rst) == ball.projx(rst)
-            return ball.expmap0(rst)
-
-# package.nn.modules.py
-def create_ball(ball=None, c=None):
-    """
-    Helper to create a PoincareBall.
-    Sometimes you may want to share a manifold across layers, e.g. you are using scaled PoincareBall.
-    In this case you will require same curvature parameters for different layers or end up with nans.
-    Parameters
-    ----------
-    ball : geoopt.PoincareBall
-    c : float
-    Returns
-    -------
-    geoopt.PoincareBall
-    """
-    if ball is None:
-        assert c is not None, "curvature of the ball should be explicitly specified"
-        ball = geoopt.PoincareBall(c)
-    # else trust input
-    return ball
-
-class MobiusLinear(torch.nn.Linear):
-    def __init__(self, *args, nonlin=None, ball=None, c=1.0, **kwargs):
-        super().__init__(*args, **kwargs)
-        # for manifolds that have parameters like Poincare Ball
-        # we have to attach them to the closure Module.
-        # It is hard to implement device allocation for manifolds in other case.
-        self.ball = create_ball(ball, c)
-        if self.bias is not None:
-            self.bias = geoopt.ManifoldParameter(self.bias, manifold=self.ball)
-        self.nonlin = nonlin
-        self.reset_parameters()
-
-    def forward(self, input, time_bias=None):
-        return mobius_linear(
-            input,
-            weight=self.weight,
-            bias=self.bias,
-            nonlin=self.nonlin,
-            ball=self.ball,
-            time_bias=time_bias
-        )
-
-    @torch.no_grad()
-    def reset_parameters(self):
-        torch.nn.init.eye_(self.weight)
-        self.weight.add_(torch.rand_like(self.weight).mul_(1e-3))
-        if self.bias is not None:
-            self.bias.zero_()
-
-
-# package.nn.functional.py
-def mobius_linear(input, weight, time_bias=None, bias=None, nonlin=None, *, ball: geoopt.PoincareBall):
-    output = ball.mobius_matvec(weight, input)
-    if bias is not None:
-        output = ball.mobius_add(output, bias)
-    if time_bias is not None:
-        output = ball.mobius_add(output, time_bias)
-    if nonlin is not None:
-        output = ball.logmap0(output)
-        output = nonlin(output)
-        output = ball.expmap0(output)
-    return output
-
-
 class HFusion(torch.nn.Module):
     """Hyperbolic Feature Fusion from Euclidean space"""
 
@@ -416,7 +223,7 @@ class FermiDiracDecoder(nn.Module):
         self.t = t
 
     def forward(self, dist):
-        probs = 1. / (torch.exp((dist - self.r) / self.t) + 1)
+        probs = 1. / (torch.exp((dist - self.r) / self.t) + 1.)
         return probs
 
 class LinkDecoder(nn.Module):
@@ -424,7 +231,7 @@ class LinkDecoder(nn.Module):
     Base model for link prediction task.
     """
 
-    def __init__(self, dim_out):
+    def __init__(self, dim_out, c):
         super(LinkDecoder, self).__init__()
         self.dc = FermiDiracDecoder()
         self.w_e = nn.Linear(dim_out, 1, bias=False)
@@ -500,7 +307,7 @@ class LinkDecoder_new(nn.Module):
     Base model for link prediction task.
     """
 
-    def __init__(self, dim_out):
+    def __init__(self, dim_out, c):
         super(LinkDecoder_new, self).__init__()
         self.dc = FermiDiracDecoder()
         self.w_e = nn.Linear(dim_out, 1, bias=False)
@@ -510,6 +317,7 @@ class LinkDecoder_new(nn.Module):
         self.fc_out = nn.Linear(dim_out, 1)
         self.drop_e = 0
         self.drop_h = 0
+        self.ball = PoincareBall(c)
         self.reset_param()
 
     def reset_param(self):
@@ -533,7 +341,7 @@ class LinkDecoder_new(nn.Module):
                 emb_out_e = self.fc_dst(h[1][2 * num_edge:, :])
 
             "compute hyperbolic dist"
-            sqdist_h = ball.dist(emb_in, emb_out)
+            sqdist_h = self.ball.dist2(emb_in, emb_out)
             # emb_in = ball.logmap0(emb_in)
             # emb_out = ball.logmap0(emb_out)
             # sqdist_h = torch.sqrt((emb_in - emb_out).pow(2).sum(dim=-1) + 1e-15)

@@ -240,6 +240,7 @@ for e in range(train_param['epoch']):
         torch.save(model.state_dict(), path_saver)
     print('\ttrain loss:{:.4f}  val ap:{:4f}  val auc:{:4f}'.format(total_loss, ap, auc))
     print('\ttotal time:{:.2f}s sample time:{:.2f}s prep time:{:.2f}s'.format(time_tot, time_sample, time_prep))
+    print('model c: {}'.format(model.curvatures))
 
 print('Loading model at epoch {}...'.format(best_e))
 model.load_state_dict(torch.load(path_saver))

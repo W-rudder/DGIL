@@ -17,6 +17,7 @@ gnn:
     att_head: 2
     dim_time: 200
     dim_out: 200
+    t_c: True
 train:
   - epoch: 100
     batch_size: 600

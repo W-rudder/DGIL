@@ -2,6 +2,7 @@ import torch
 import dgl
 from memorys import *
 from layers import *
+from hyper_layers import *
 
 class GeneralModel(torch.nn.Module):
 
@@ -13,6 +14,9 @@ class GeneralModel(torch.nn.Module):
         self.sample_param = sample_param
         self.memory_param = memory_param
         self.use_fusion = train_param['use_fusion']
+        if 't_c' in gnn_param:
+            curvatures = [torch.nn.Parameter(torch.Tensor([1.])) for _ in range(gnn_param['layer'] + 1)]
+            self.curvatures = curvatures
         if not 'dim_out' in gnn_param:
             gnn_param['dim_out'] = memory_param['dim_out']
         self.gnn_param = gnn_param
@@ -43,16 +47,16 @@ class GeneralModel(torch.nn.Module):
         elif gnn_param['arch'] == 'GIL':
             for h in range(sample_param['history']):
                 self.layers['l0h' + str(h)] = TransfomerAttentionLayer(self.dim_node_input, dim_edge, gnn_param['dim_time'], gnn_param['att_head'], train_param['dropout'], train_param['att_dropout'], gnn_param['dim_out'], combined=combined)
-                self.layers['l0h' + str(h) + 'hyper'] = HGATLayer(self.dim_node_input, dim_edge, gnn_param['dim_time'], gnn_param['att_head'], train_param['dropout'], train_param['att_dropout'], gnn_param['dim_out'], combined=combined)
+                self.layers['l0h' + str(h) + 'hyper'] = HGATLayer(self.dim_node_input, dim_edge, gnn_param['dim_time'], gnn_param['att_head'], train_param['dropout'], train_param['att_dropout'], gnn_param['dim_out'], curvatures[0], curvatures[1], combined=combined)
             for l in range(1, gnn_param['layer']):
                 for h in range(sample_param['history']):
                     self.layers['l' + str(l) + 'h' + str(h)] = TransfomerAttentionLayer(gnn_param['dim_out'], dim_edge, gnn_param['dim_time'], gnn_param['att_head'], train_param['dropout'], train_param['att_dropout'], gnn_param['dim_out'], combined=False)
-                    self.layers['l' + str(l) + 'h' + str(h) + 'hyper'] = HGATLayer(gnn_param['dim_out'], dim_edge, gnn_param['dim_time'], gnn_param['att_head'], train_param['dropout'], train_param['att_dropout'], gnn_param['dim_out'], combined=False)
+                    self.layers['l' + str(l) + 'h' + str(h) + 'hyper'] = HGATLayer(gnn_param['dim_out'], dim_edge, gnn_param['dim_time'], gnn_param['att_head'], train_param['dropout'], train_param['att_dropout'], gnn_param['dim_out'], curvatures[l], curvatures[l+1], combined=False)
         else:
             raise NotImplementedError
         
         if gnn_param['arch'] == 'GIL':
-            self.edge_predictor = LinkDecoder_new(gnn_param['dim_out'])
+            self.edge_predictor = LinkDecoder_new(gnn_param['dim_out'], curvatures[-1])
         else:
             self.edge_predictor = EdgePredictor(gnn_param['dim_out'])
         if 'combine' in gnn_param and gnn_param['combine'] == 'rnn':
