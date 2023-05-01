@@ -7,6 +7,7 @@ from dgl.nn.pytorch.utils import Identity
 from geoopt.manifolds.stereographic import PoincareBall
 import torch.nn.functional as F
 import geoopt
+import geoopt.manifolds.stereographic.math as pmath
 
 class TimeEncode(torch.nn.Module):
 
@@ -317,7 +318,7 @@ class LinkDecoder_new(nn.Module):
         self.fc_out = nn.Linear(dim_out, 1)
         self.drop_e = 0
         self.drop_h = 0
-        self.ball = PoincareBall(c)
+        self.c = c
         self.reset_param()
 
     def reset_param(self):
@@ -341,7 +342,7 @@ class LinkDecoder_new(nn.Module):
                 emb_out_e = self.fc_dst(h[1][2 * num_edge:, :])
 
             "compute hyperbolic dist"
-            sqdist_h = self.ball.dist2(emb_in, emb_out)
+            sqdist_h = pmath.dist(emb_in, emb_out, k=-self.c) ** 2
             # emb_in = ball.logmap0(emb_in)
             # emb_out = ball.logmap0(emb_out)
             # sqdist_h = torch.sqrt((emb_in - emb_out).pow(2).sum(dim=-1) + 1e-15)
