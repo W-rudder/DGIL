@@ -14,14 +14,14 @@ memory:
 gnn:
   - arch: 'GIL'
     layer: 2
-    att_head: 1
+    att_head: 2
     dim_time: 100
     dim_out: 100
     t_c: True
 train:
   - epoch: 100
     batch_size: 600
-    lr: 0.1
+    lr: 0.0001
     dropout: 0.
     att_dropout: 0.
     all_on_gpu: True

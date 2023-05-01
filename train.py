@@ -219,9 +219,9 @@ for e in range(train_param['epoch']):
         loss += creterion(pred_neg, torch.zeros_like(pred_neg))
         total_loss += float(loss) * train_param['batch_size']
         loss.backward()
-        for name, param in model.named_parameters():
-            print('name:', name)
-            print('grad:', param.grad)
+        #for name, param in model.named_parameters():
+            #print('name:', name)
+            #print('grad:', param.grad)
         optimizer.step()
         t_prep_s = time.time()
         if mailbox is not None:

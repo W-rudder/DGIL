@@ -41,8 +41,8 @@ class HGATLayer(torch.nn.Module):
         self.fc_edge = HypLinear(
             dim_edge_feat, self._out_feats * num_head, c_in, dropout, bias=bias
         )
-        self.attn_l = nn.Linear(self.dim_out, 1, bias=True)
-        self.attn_r = nn.Linear(self.dim_out, 1, bias=True)
+        self.attn_l = nn.Linear(self._out_feats, 1, bias=True)
+        self.attn_r = nn.Linear(self._out_feats, 1, bias=True)
 
         if residual:
             if self._in_dst_feats != self._out_feats * num_head:
@@ -129,7 +129,7 @@ class HypLinear(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.c = c
-        self.dropout = 1 - dropout
+        self.dropout = dropout
         self.use_bias = bias
         self.bias = nn.Parameter(torch.Tensor(out_features))
         self.weight = nn.Parameter(torch.Tensor(out_features, in_features))

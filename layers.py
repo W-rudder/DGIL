@@ -353,7 +353,7 @@ class LinkDecoder_new(nn.Module):
 
             "compute dist in Euclidean"
             h_edge = torch.nn.functional.relu(emb_in_e + emb_out_e)
-            probs_e = torch.sigmoid(self.fc_out(h_edge))
+            probs_e = torch.sigmoid(self.fc_out(h_edge).view(-1))
 
             # sub
             w_e = torch.sigmoid(self.w_e(emb_in_e + emb_out_e).view(-1))
@@ -363,8 +363,8 @@ class LinkDecoder_new(nn.Module):
             # print(w_h, w_e, w)
             # w = F.normalize(w, p=1, dim=-1)
 
-            # probs = w[-1, 0] * probs_h + w[-1, 1] * probs_e
-            probs = probs_h
+            probs = w[:, 0] * probs_h + w[:, 1] * probs_e
+            # probs = probs_h
 
             assert torch.min(probs) >= 0
             assert torch.max(probs) <= 1
