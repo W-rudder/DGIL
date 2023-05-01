@@ -192,11 +192,12 @@ class HFusion(torch.nn.Module):
     def reset_parameters(self):
         nn.init.constant_(self.att, 0)
 
-    def forward(self, x_h, x_e):
-        dist = ball.dist(x_h, ball.expmap0(x_e)) * self.att
-        x_e = ball.mobius_scalar_mul(dist.view([-1, 1]), ball.expmap0(x_e))
+    def forward(self, x_h, x_e, c):
+        dist = (pmath.dist(x_h, pmath.project(x_e, k=-c), k=-c) ** 2) * self.att
+        x_e = pmath.mobius_scalar_mul(dist.view([-1, 1]), pmath.project(x_e, k=-c), k=-c)
+        x_e = pmath.project(x_e, k=-c)
         # x_e = F.dropout(x_e, p=self.drop, training=self.training)
-        x_h = ball.mobius_add(x_h, x_e)
+        x_h = pmath.project(pmath.mobius_add(x_h, x_e, k=-c), k=-c)
         return x_h
 
 # Fusion
@@ -212,9 +213,9 @@ class EFusion(torch.nn.Module):
     def reset_parameters(self):
         nn.init.constant_(self.att, 0)
 
-    def forward(self, x_h, x_e):
-        dist = (ball.logmap0(x_h) - x_e).pow(2).sum(dim=-1) * self.att
-        x_h = dist.view([-1, 1]) * ball.logmap0(x_h)
+    def forward(self, x_h, x_e, c):
+        dist = (pmath.logmap0(x_h, k=-c) - x_e).pow(2).sum(dim=-1) * self.att
+        x_h = dist.view([-1, 1]) * pmath.logmap0(x_h, k=-c)
         # x_h = F.dropout(x_h, p=self.drop, training=self.training)
         x_e = x_e + x_h
         return x_e
@@ -239,9 +240,10 @@ class LinkDecoder(nn.Module):
         super(LinkDecoder, self).__init__()
         self.dc = FermiDiracDecoder()
         self.w_e = nn.Linear(dim_out, 1, bias=False)
-        self.w_h = nn.Linear(dim_out, 1, bias=False)
+        self.w_h = nn.Linear(1, 1, bias=False)
         self.drop_e = 0
         self.drop_h = 0
+        self.c = c
         self.reset_param()
 
     def reset_param(self):
@@ -255,39 +257,27 @@ class LinkDecoder(nn.Module):
                 # pos instancs
                 emb_in = h[0][:num_edge, :]
                 emb_out = h[0][num_edge:2 * num_edge, :]
-                emb_in_e = h[1][:num_edge, :]
-                emb_out_e = h[1][num_edge:2 * num_edge, :]
+                emb_in_e = self.fc_src(h[1][:num_edge, :])
+                emb_out_e = self.fc_dst(h[1][num_edge:2 * num_edge, :])
             else:
                 # neg instance
                 emb_in = h[0][:num_edge, :].tile(neg_samples, 1)
                 emb_out = h[0][2 * num_edge:, :]
-                emb_in_e = h[1][:num_edge, :].tile(neg_samples, 1)
-                emb_out_e = h[1][2 * num_edge:, :]
+                emb_in_e = self.fc_src(h[1][:num_edge, :]).tile(neg_samples, 1)
+                emb_out_e = self.fc_dst(h[1][2 * num_edge:, :])
 
             "compute hyperbolic dist"
-            #sqdist_h = ball.dist(emb_in, emb_out) + 1e-15
-            emb_in = ball.logmap0(emb_in)
-            emb_out = ball.logmap0(emb_out)
-            sqdist_h = torch.sqrt((emb_in - emb_out).pow(2).sum(dim=-1) + 1e-15)
+            sqdist_h = pmath.dist(emb_in, emb_out, k=-self.c) ** 2
+            # sqdist_h = torch.sqrt((emb_in - emb_out).pow(2).sum(dim=-1) + 1e-15)
             probs_h = self.dc.forward(sqdist_h)
-            # probs_h = 1/ (sqdist_h + 1)
 
             "compute dist in Euclidean"
-            sqdist_e = torch.sqrt((emb_in_e - emb_out_e).pow(2).sum(dim=-1) + 1e-15)
-            probs_e = self.dc.forward(sqdist_e)
-            # probs_e = 1/ (sqdist_e + 1)
+            h_edge = torch.nn.functional.relu(emb_in_e + emb_out_e)
+            probs_e = torch.sigmoid(self.fc_out(h_edge).view(-1))
 
-            # print(sqdist_e, sqdist_h)
-            # print(probs_e, probs_h)
-            # print(h[0], h[1])
-            # print(emb_in, emb_out)
-            # print(emb_in_e,emb_out_e)
-            # print('-----weight')
-            # print(self.w_h.weight, self.w_h.bias)
-            # print(self.w_e.weight, self.w_e.bias)
             # sub
-            w_h = torch.sigmoid(self.w_h(emb_in - emb_out).view(-1))
-            w_e = torch.sigmoid(self.w_e(emb_in_e - emb_out_e).view(-1))
+            w_h = torch.sigmoid(self.w_h(sqdist_h).view(-1))
+            w_e = torch.sigmoid(self.w_e(h_edge).view(-1))
             w = torch.cat([w_h.view(-1, 1), w_e.view(-1, 1)], dim=-1)
             # print('------w')
             # print(w_h, w_e, w)

@@ -81,8 +81,8 @@ class GeneralModel(torch.nn.Module):
                 if l != self.gnn_param['layer'] - 1:
                     if self.gnn_param['arch'] == 'GIL':
                         if self.use_fusion:
-                            f_h = self.h_fusion(rst_h, rst)
-                            f_e = self.e_fusion(rst_h, rst)
+                            f_h = self.h_fusion(rst_h, rst, self.curvatures[l+1])
+                            f_e = self.e_fusion(rst_h, rst, self.curvatures[l+1])
                             mfgs[l + 1][h].srcdata['hyper'] = f_h
                             mfgs[l + 1][h].srcdata['h'] = f_e
                         else:
@@ -93,8 +93,8 @@ class GeneralModel(torch.nn.Module):
                 else:
                     if self.gnn_param['arch'] == 'GIL':
                         if self.use_fusion:
-                            rst_h = self.h_fusion(rst_h, rst)
-                            rst = self.e_fusion(rst_h, rst)      
+                            rst_h = self.h_fusion(rst_h, rst, self.curvatures[l+1])
+                            rst = self.e_fusion(rst_h, rst, self.curvatures[l+1])      
                         out.append((rst_h, rst))
                     else:
                         out.append(rst)
