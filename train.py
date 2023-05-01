@@ -70,8 +70,8 @@ if 'combine_neighs' in train_param and train_param['combine_neighs']:
 model = GeneralModel(gnn_dim_node, gnn_dim_edge, sample_param, memory_param, gnn_param, train_param, combined=combine_first).cuda()
 mailbox = MailBox(memory_param, g['indptr'].shape[0] - 1, gnn_dim_edge) if memory_param['type'] != 'none' else None
 creterion = torch.nn.BCELoss()
-# optimizer = torch.optim.Adam(model.parameters(), lr=train_param['lr'])
-optimizer = RiemannianAdam(model.parameters(), lr=train_param['lr'])
+optimizer = torch.optim.Adam(model.parameters(), lr=train_param['lr'])
+# optimizer = RiemannianAdam(model.parameters(), lr=train_param['lr'])
 if 'all_on_gpu' in train_param and train_param['all_on_gpu']:
     if node_feats is not None:
         node_feats = node_feats.cuda()
@@ -219,6 +219,9 @@ for e in range(train_param['epoch']):
         loss += creterion(pred_neg, torch.zeros_like(pred_neg))
         total_loss += float(loss) * train_param['batch_size']
         loss.backward()
+        for name, param in model.named_parameters():
+            print('name:', name)
+            print('grad:', param.grad)
         optimizer.step()
         t_prep_s = time.time()
         if mailbox is not None:

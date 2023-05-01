@@ -57,6 +57,7 @@ class GeneralModel(torch.nn.Module):
         
         if gnn_param['arch'] == 'GIL':
             self.edge_predictor = LinkDecoder_new(gnn_param['dim_out'], curvatures[-1])
+            print(curvatures)
         else:
             self.edge_predictor = EdgePredictor(gnn_param['dim_out'])
         if 'combine' in gnn_param and gnn_param['combine'] == 'rnn':

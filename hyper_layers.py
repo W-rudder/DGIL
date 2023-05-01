@@ -41,8 +41,8 @@ class HGATLayer(torch.nn.Module):
         self.fc_edge = HypLinear(
             dim_edge_feat, self._out_feats * num_head, c_in, dropout, bias=bias
         )
-        self.attn_l = nn.Linear(self._in_src_feats, 1, bias=True)
-        self.attn_r = nn.Linear(self._in_dst_feats, 1, bias=True)
+        self.attn_l = nn.Linear(self.dim_out, 1, bias=True)
+        self.attn_r = nn.Linear(self.dim_out, 1, bias=True)
 
         if residual:
             if self._in_dst_feats != self._out_feats * num_head:
@@ -96,7 +96,7 @@ class HGATLayer(torch.nn.Module):
         b.srcdata.update({"ft": feat_src_e, "el": el})
         b.dstdata.update({"er": er})
         # compute edge attention, el and er are a_l Wh_i and a_r Wh_j respectively.
-        b.apply_edges(dgl.u_add_v("el", "er", "e"))
+        b.apply_edges(dgl.function.u_add_v("el", "er", "e"))
         e = self.leaky_relu(b.edata.pop("e"))
         # compute softmax
         b.edata["a"] = self.attn_drop(dgl.ops.edge_softmax(b, e))
