@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
 from torch.nn.modules.module import Module
-from geoopt.manifolds.stereographic import PoincareBall
+from geoopt.manifolds.stereographic import math as pmath
 from dgl.nn.pytorch.utils import Identity
 from layers import TimeEncode
 
@@ -24,7 +24,7 @@ class HGATLayer(torch.nn.Module):
         self.leaky_relu = nn.LeakyReLU(negative_slope)
         self.bias = bias
         self.activation = HypAct(c_in, c_out, 'relu')
-        self.ball = PoincareBall(c_in)
+        self.c_in = c_in
         if dim_time > 0:
             self.time_enc = TimeEncode(dim_time)
 
@@ -66,7 +66,7 @@ class HGATLayer(torch.nn.Module):
     def forward(self, b, edge_weight=None, get_attention=False):
         assert(self.dim_time + self.dim_node_feat + self.dim_edge_feat > 0)
         if b.num_edges() == 0:
-            return torch.zeros((b.num_dst_nodes(), self.dim_out), device=torch.device('cuda:0'))
+            return torch.zeros((b.num_dst_nodes(), self.dim_out)).cuda()
         if self.dim_time > 0:
             time = torch.cat([torch.zeros(b.num_dst_nodes(), dtype=torch.float32).cuda(), b.edata['dt']])
             time_feat = self.time_enc(time)
@@ -75,19 +75,19 @@ class HGATLayer(torch.nn.Module):
         # 2. edge特征用来做attn
         # 输入的time是e， node_feat 是h-》node_feat log后拼上时间做attn
         if self.dim_node_feat == 0:
-            src_feat = self.ball.projx(time_feat)
+            src_feat = pmath.project(time_feat, k=-self.c_in)
         else:
-            src_feat = torch.cat([time_feat, self.ball.logmap0(b.srcdata['hyper'])], dim=1)
-            src_feat = self.ball.projx(src_feat)
+            src_feat = torch.cat([time_feat, pmath.logmap0(b.srcdata['hyper'], k=-self.c_in)], dim=1)
+            src_feat = pmath.project(src_feat, k=-self.c_in)
         h_src = self.feat_drop(src_feat)
         h_dst = self.feat_drop(src_feat)[:b.num_dst_nodes()]
 
         feat_src = self.fc_src(h_src)
         feat_dst = self.fc_dst(h_dst)
 
-        feat_src_e = self.ball.logmap0(feat_src).view(
+        feat_src_e = pmath.logmap0(feat_src, k=-self.c_in).view(
             -1, self.num_head, self._out_feats)
-        feat_dst_e = self.ball.logmap0(feat_dst).view(
+        feat_dst_e = pmath.logmap0(feat_dst, k=-self.c_in).view(
             -1, self.num_head, self._out_feats)
 
         el = self.attn_l(feat_src_e)
@@ -104,6 +104,7 @@ class HGATLayer(torch.nn.Module):
         b.update_all(dgl.function.u_mul_e('ft', 'a', 'm'),
                             dgl.function.sum('m', 'ft'))
         rst = b.dstdata['ft'].view(-1, self.dim_out)
+        rst = pmath.project(pmath.expmap0(rst, k=-self.c_in), k=-self.c_in)
 
         # residual
         if self.res_fc is not None:
@@ -128,8 +129,7 @@ class HypLinear(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.c = c
-        self.ball = PoincareBall(self.c)
-        self.dropout = dropout
+        self.dropout = 1 - dropout
         self.use_bias = bias
         self.bias = nn.Parameter(torch.Tensor(out_features))
         self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
@@ -141,15 +141,14 @@ class HypLinear(nn.Module):
 
     def forward(self, x):
         drop_weight = F.dropout(self.weight, self.dropout, training=self.training)
-        res = self.ball.mobius_matvec(drop_weight, x)
-        print(self.ball.projx(res), res)
-        assert self.ball.projx(res) == res
+        res = pmath.mobius_matvec(drop_weight, x, k=-self.c)
+        res = pmath.project(res, k=-self.c)
         if self.use_bias:
             bias = self.bias.view(1, -1)
-            hyp_bias = self.ball.expmap0(bias)
-            assert self.ball.projx(hyp_bias) == hyp_bias
-            res = self.ball.mobius_add(res, hyp_bias)
-            assert self.ball.projx(res) == res
+            hyp_bias = pmath.expmap0(bias, k=-self.c)
+            hyp_bias = pmath.project(hyp_bias, k=-self.c)
+            res = pmath.mobius_add(res, hyp_bias, k=-self.c)
+            res = pmath.project(res, k=-self.c)
         return res
 
     def extra_repr(self):
@@ -166,14 +165,12 @@ class HypAct(Module):
         super(HypAct, self).__init__()
         self.c_in = c_in
         self.c_out = c_out
-        self.ball_in = PoincareBall(c_in)
-        self.ball_out = PoincareBall(c_out)
         self.act = getattr(F, act)
 
     def forward(self, x):
-        xt = self.act(self.ball_in.logmap0(x))
+        xt = self.act(pmath.logmap0(x, k=-self.c_in))
         # xt = self.ball_out.proju(xt)
-        return self.ball_out.projx(self.ball_out.expmap0(xt, project=False))
+        return pmath.project(pmath.expmap0(xt, k=-self.c_out), k=-self.c_out)
 
     def extra_repr(self):
         return 'c_in={}, c_out={}'.format(
