@@ -179,6 +179,7 @@ class NodeClassificationModel(torch.nn.Module):
         w = torch.cat([w_h.view(-1, 1), w_e.view(-1, 1)], dim=-1)
         w = F.normalize(w, p=1, dim=-1)
         probs = w[:, 0].view(-1, 1) * prob_h + w[:, 1].view(-1, 1) * prob_e
+        print(probs)
 
         assert torch.min(probs) >= 0
         assert torch.max(probs) <= 1

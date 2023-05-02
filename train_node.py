@@ -234,6 +234,8 @@ for e in range(args.epoch):
     minibatch.set_mode('train')
     minibatch.shuffle()
     model.train()
+    pbar = tqdm(total=len(minibatch))
+    pbar.set_description('Epoch {:d}:'.format(e))
     for emb, label in minibatch:
         optimizer.zero_grad()
         if args.posneg:
@@ -244,6 +246,8 @@ for e in range(args.epoch):
         loss = loss_fn(pred, label.long())
         loss.backward()
         optimizer.step()
+        pbar.update()
+    pbar.close()
     print('model c:', model.c)
     minibatch.set_mode('val')
     model.eval()
