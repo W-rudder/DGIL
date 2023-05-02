@@ -155,10 +155,10 @@ class NodeClassificationModel(torch.nn.Module):
         self.fc_h = HypLinear(self.dim_in, dim_hid, self.c, dropout=0., bias=True)
         self.act = HypAct(self.c, self.c, 'relu')
         self.fc_h_c = torch.nn.Linear(dim_hid, num_class)
-        
+
         self.w_h = torch.nn.Linear(self.dim_in, 1)
         self.w_e = torch.nn.Linear(self.dim_in, 1)
-        self.softmax = nn.LogSoftmax()
+        self.softmax = nn.LogSoftmax(dim=-1)
 
     def forward(self, x):
         x_h, x_e = x[:, :self.dim_in], x[:, self.dim_in:]
@@ -178,7 +178,7 @@ class NodeClassificationModel(torch.nn.Module):
 
         w = torch.cat([w_h.view(-1, 1), w_e.view(-1, 1)], dim=-1)
         w = F.normalize(w, p=1, dim=-1)
-        probs = w[:, 0] * prob_h + w[:, 1] * prob_e
+        probs = w[:, 0].view(-1, 1) * prob_h + w[:, 1].view(-1, 1) * prob_e
 
         assert torch.min(probs) >= 0
         assert torch.max(probs) <= 1
