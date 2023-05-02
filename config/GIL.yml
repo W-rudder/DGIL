@@ -25,4 +25,4 @@ train:
     dropout: 0.
     att_dropout: 0.
     all_on_gpu: True
-    use_fusion: False
+    use_fusion: True

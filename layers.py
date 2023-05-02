@@ -241,6 +241,9 @@ class LinkDecoder(nn.Module):
         self.dc = FermiDiracDecoder()
         self.w_e = nn.Linear(dim_out, 1, bias=False)
         self.w_h = nn.Linear(1, 1, bias=False)
+        self.fc_src = nn.Linear(dim_out, dim_out)
+        self.fc_dst = nn.Linear(dim_out, dim_out)
+        self.fc_out = nn.Linear(dim_out, 1)
         self.drop_e = 0
         self.drop_h = 0
         self.c = c
@@ -276,7 +279,7 @@ class LinkDecoder(nn.Module):
             probs_e = torch.sigmoid(self.fc_out(h_edge).view(-1))
 
             # sub
-            w_h = torch.sigmoid(self.w_h(sqdist_h).view(-1))
+            w_h = torch.sigmoid(self.w_h(sqdist_h.view(-1, 1)).view(-1))
             w_e = torch.sigmoid(self.w_e(h_edge).view(-1))
             w = torch.cat([w_h.view(-1, 1), w_e.view(-1, 1)], dim=-1)
             # print('------w')
@@ -284,6 +287,7 @@ class LinkDecoder(nn.Module):
             w = F.normalize(w, p=1, dim=-1)
 
             probs = w[:, 0] * probs_h + w[:, 1] * probs_e
+            print('batch avg:', w[:, 0].mean(), w[:, 1].mean())
 
             assert torch.min(probs) >= 0
             assert torch.max(probs) <= 1
@@ -354,6 +358,7 @@ class LinkDecoder_new(nn.Module):
             # w = F.normalize(w, p=1, dim=-1)
 
             probs = w[:, 0] * probs_h + w[:, 1] * probs_e
+            print('batch avg:', w[:, 0].mean(), w[:, 1].mean())
             # probs = probs_h
 
             assert torch.min(probs) >= 0
