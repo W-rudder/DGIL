@@ -141,6 +141,19 @@ if not os.path.isfile('embs/' + emb_file_name):
     print('Saved to embs/' + emb_file_name)
 else:
     print('Loading temporal embeddings from embs/' + emb_file_name)
+    node_feats, edge_feats = load_feat(args.data)
+    g, df = load_graph(args.data)
+    sample_param, memory_param, gnn_param, train_param = parse_config(args.config)
+    train_edge_end = df[df['ext_roll'].gt(0)].index[0]
+    val_edge_end = df[df['ext_roll'].gt(1)].index[0]
+
+    gnn_dim_node = 0 if node_feats is None else node_feats.shape[1]
+    gnn_dim_edge = 0 if edge_feats is None else edge_feats.shape[1]
+    combine_first = False
+    if 'combine_neighs' in train_param and train_param['combine_neighs']:
+        combine_first = True
+    model = GeneralModel(gnn_dim_node, gnn_dim_edge, sample_param, memory_param, gnn_param, train_param, combined=combine_first).cuda()
+    model.load_state_dict(torch.load(args.model))
     emb = torch.load('embs/' + emb_file_name)
 
 c = model.curvatures[-1].clone().detach().requires_grad_(False)

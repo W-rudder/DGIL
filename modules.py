@@ -148,13 +148,13 @@ class NodeClassificationModel(torch.nn.Module):
     def __init__(self, dim_in, dim_hid, num_class, c):
         super(NodeClassificationModel, self).__init__()
         self.dim_in = dim_in // 2
+        self.c = c
         self.fc1 = torch.nn.Linear(self.dim_in, dim_hid)
         self.fc2 = torch.nn.Linear(dim_hid, num_class)
 
         self.fc_h = HypLinear(self.dim_in, dim_hid, self.c, dropout=0., bias=True)
         self.act = HypAct(self.c, self.c, 'relu')
         self.fc_h_c = torch.nn.Linear(dim_hid, num_class)
-        self.c = c
         self.softmax = nn.LogSoftmax()
 
     def forward(self, x):
