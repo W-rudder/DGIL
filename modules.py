@@ -112,28 +112,72 @@ class GeneralModel(torch.nn.Module):
         for l in range(self.gnn_param['layer']):
             for h in range(self.sample_param['history']):
                 rst = self.layers['l' + str(l) + 'h' + str(h)](mfgs[l][h])
+                if self.gnn_param['arch'] == 'GIL':
+                    rst_h = self.layers['l' + str(l) + 'h' + str(h) + 'hyper'](mfgs[l][h])
                 if 'time_transform' in self.gnn_param and self.gnn_param['time_transform'] == 'JODIE':
                     rst = self.layers['l0h' + str(h) + 't'](rst, mfgs[l][h].srcdata['mem_ts'], mfgs[l][h].srcdata['ts'])
                 if l != self.gnn_param['layer'] - 1:
-                    mfgs[l + 1][h].srcdata['h'] = rst
+                    if self.gnn_param['arch'] == 'GIL':
+                        if self.use_fusion:
+                            f_h = self.h_fusion(rst_h, rst, self.curvatures[l+1])
+                            f_e = self.e_fusion(rst_h, rst, self.curvatures[l+1])
+                            mfgs[l + 1][h].srcdata['hyper'] = f_h
+                            mfgs[l + 1][h].srcdata['h'] = f_e
+                        else:
+                            mfgs[l + 1][h].srcdata['h'] = rst
+                            mfgs[l + 1][h].srcdata['hyper'] = rst_h
+                    else:
+                        mfgs[l + 1][h].srcdata['h'] = rst
                 else:
-                    out.append(rst)
+                    if self.gnn_param['arch'] == 'GIL':
+                        if self.use_fusion:
+                            rst_h = self.h_fusion(rst_h, rst, self.curvatures[l+1])
+                            rst = self.e_fusion(rst_h, rst, self.curvatures[l+1])      
+                        out.append((rst_h, rst))
+                    else:
+                        out.append(rst)
         if self.sample_param['history'] == 1:
             out = out[0]
         else:
             out = torch.stack(out, dim=0)
             out = self.combiner(out)[0][-1, :, :]
-        return out
+        return torch.cat(out, dim=-1)
 
 class NodeClassificationModel(torch.nn.Module):
 
-    def __init__(self, dim_in, dim_hid, num_class):
+    def __init__(self, dim_in, dim_hid, num_class, c):
         super(NodeClassificationModel, self).__init__()
-        self.fc1 = torch.nn.Linear(dim_in, dim_hid)
+        self.dim_in = dim_in // 2
+        self.fc1 = torch.nn.Linear(self.dim_in, dim_hid)
         self.fc2 = torch.nn.Linear(dim_hid, num_class)
 
+        self.fc_h = HypLinear(self.dim_in, dim_hid, self.c, dropout=0., bias=True)
+        self.act = HypAct(self.c, self.c, 'relu')
+        self.fc_h_c = torch.nn.Linear(dim_hid, num_class)
+        self.c = c
+        self.softmax = nn.LogSoftmax()
+
     def forward(self, x):
-        x = self.fc1(x)
-        x = torch.nn.functional.relu(x)
-        x = self.fc2(x)
-        return x
+        x_h, x_e = x[:, :self.dim_in], x[:, self.dim_in:]
+        x_e = self.fc1(x_e)
+        x_e_f = torch.nn.functional.relu(x_e)
+        x_e = self.fc2(x_e_f)
+        prob_e = self.softmax(x_e)
+
+        x_h = self.fc_h(x_h)
+        x_h_f = self.act(x_h)
+        x_h = pmath.logmap0(x_h_f, k=-self.c)
+        prob_h = self.softmax(self.fc_h_c(x_h))
+
+        '''Prob. Assembling'''
+        w_h = torch.sigmoid(self.w_h(pmath.logmap0(x_h_f, k=-self.c)))
+        w_e = torch.sigmoid(self.w_e(x_e_f))
+
+        w = torch.cat([w_h.view(-1, 1), w_e.view(-1, 1)], dim=-1)
+        w = F.normalize(w, p=1, dim=-1)
+        probs = w[:, 0] * prob_h + w[:, 1] * prob_e
+
+        assert torch.min(probs) >= 0
+        assert torch.max(probs) <= 1
+
+        return probs
