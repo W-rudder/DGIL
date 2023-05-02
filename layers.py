@@ -287,7 +287,6 @@ class LinkDecoder(nn.Module):
             w = F.normalize(w, p=1, dim=-1)
 
             probs = w[:, 0] * probs_h + w[:, 1] * probs_e
-            print('batch avg:', w[:, 0].mean(), w[:, 1].mean())
 
             assert torch.min(probs) >= 0
             assert torch.max(probs) <= 1
@@ -358,7 +357,6 @@ class LinkDecoder_new(nn.Module):
             # w = F.normalize(w, p=1, dim=-1)
 
             probs = w[:, 0] * probs_h + w[:, 1] * probs_e
-            print('batch avg:', w[:, 0].mean(), w[:, 1].mean())
             # probs = probs_h
 
             assert torch.min(probs) >= 0
