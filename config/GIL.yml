@@ -19,7 +19,7 @@ gnn:
     dim_out: 100
     t_c: True
 train:
-  - epoch: 100
+  - epoch: 600
     batch_size: 600
     lr: 0.0001
     dropout: 0.

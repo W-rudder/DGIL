@@ -135,7 +135,7 @@ if not os.path.isfile('embs/' + emb_file_name):
 
     emb = list()
     for _, rows in tqdm(ldf.groupby(ldf.index // args.batch_size)):
-        emb.append(get_node_emb(rows.node.values.astype(np.int32), rows.time.values.astype(np.float32)))
+        emb.append(get_node_emb(rows.src.values.astype(np.int32), rows.time.values.astype(np.float32)))
     emb = torch.cat(emb, dim=0)
     torch.save(emb, 'embs/' + emb_file_name)
     print('Saved to embs/' + emb_file_name)
@@ -234,8 +234,6 @@ for e in range(args.epoch):
     minibatch.set_mode('train')
     minibatch.shuffle()
     model.train()
-    pbar = tqdm(total=len(minibatch))
-    pbar.set_description('Epoch {:d}:'.format(e))
     for emb, label in minibatch:
         optimizer.zero_grad()
         if args.posneg:
@@ -246,9 +244,6 @@ for e in range(args.epoch):
         loss = loss_fn(pred, label.long())
         loss.backward()
         optimizer.step()
-        pbar.update()
-    pbar.close()
-    print('model c:', model.c)
     minibatch.set_mode('val')
     model.eval()
     accs = list()
@@ -295,3 +290,4 @@ with torch.no_grad():
     acc = float(torch.tensor(accs).mean())
     auc = float(torch.tensor(aucs_mrrs).mean())
 print('Testing acc: {:.4f}\tauc: {:.4f}'.format(acc, auc))
+print('Testing acc: {:.4f}'.format(acc))
