@@ -28,7 +28,7 @@ from modules import *
 from sampler import *
 from utils import *
 from tqdm import tqdm
-from sklearn.metrics import average_precision_score, f1_score
+from sklearn.metrics import average_precision_score, f1_score, roc_auc_score
 
 ldf = pd.read_csv('DATA/{}/labels.csv'.format(args.data))
 role = ldf['ext_roll'].values
@@ -229,7 +229,7 @@ if not os.path.isdir('models'):
     os.mkdir('models')
 save_path = 'models/node_' + args.model.split('/')[-1]
 best_e = 0
-best_acc = 0
+best_auc = 0
 for e in range(args.epoch):
     minibatch.set_mode('train')
     minibatch.shuffle()
@@ -252,29 +252,33 @@ for e in range(args.epoch):
     minibatch.set_mode('val')
     model.eval()
     accs = list()
+    aucs_mrrs = list()
     with torch.no_grad():
         for emb, label in minibatch:
             if args.posneg:
                 neg_idx = neg_node_sampler.sample(emb.shape[0])
                 emb = torch.cat([emb, emb_neg[neg_idx]], dim=0)
                 label = torch.cat([label, labels_neg[neg_idx]], dim=0)
-            pred = model(emb)
+            pred = torch.softmax(model(emb))
             if args.posneg:
-                acc = average_precision_score(label.cpu(), pred.softmax(dim=1)[:, 1].cpu())
+                acc = average_precision_score(label.cpu(), pred[:, 1].cpu())
             else:
                 acc = f1_score(label.cpu(), torch.argmax(pred, dim=1).cpu(), average="micro")
             accs.append(acc)
+            aucs_mrrs.append(roc_auc_score(label.cpu(), pred[:, 1].cpu()))
         acc = float(torch.tensor(accs).mean())
-    print('Epoch: {}\tVal acc: {:.4f}'.format(e, acc))
-    if acc > best_acc:
+        auc = float(torch.tensor(aucs_mrrs).mean())
+    print('Epoch: {}\tVal acc: {:.4f}\tVal auc: {:.4f}'.format(e, acc, auc))
+    if auc > best_auc:
         best_e = e
-        best_acc = acc
+        best_auc = auc
         torch.save(model.state_dict(), save_path)
 print('Loading model at epoch {}...'.format(best_e))
 model.load_state_dict(torch.load(save_path))
 minibatch.set_mode('test')
 model.eval()
 accs = list()
+aucs_mrrs = list()
 with torch.no_grad():
     for emb, label in minibatch:
         if args.posneg:
@@ -283,9 +287,11 @@ with torch.no_grad():
             label = torch.cat([label, labels_neg[neg_idx]], dim=0)
         pred = model(emb)
         if args.posneg:
-            acc = average_precision_score(label.cpu(), pred.softmax(dim=1)[:, 1].cpu())
+            acc = average_precision_score(label.cpu(), pred[:, 1].cpu())
         else:
             acc = f1_score(label.cpu(), torch.argmax(pred, dim=1).cpu(), average="micro")
         accs.append(acc)
+        aucs_mrrs.append(roc_auc_score(label.cpu(), pred[:, 1].cpu()))
     acc = float(torch.tensor(accs).mean())
-print('Testing acc: {:.4f}'.format(acc))
+    auc = float(torch.tensor(aucs_mrrs).mean())
+print('Testing acc: {:.4f}\tauc: {:.4f}'.format(acc, auc))
