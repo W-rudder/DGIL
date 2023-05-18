@@ -37,6 +37,7 @@ role = ldf['ext_roll'].values
 labels = ldf['label'].values.astype(np.int64)
 
 emb_file_name = hashlib.md5(str(torch.load(args.model, map_location=torch.device('cpu'))).encode('utf-8')).hexdigest() + '.pt'
+# emb_file_name = '51e6c96f36aa62350bbf861f3e90a214.pt'
 if not os.path.isdir('embs'):
     os.mkdir('embs')
 if not os.path.isfile('embs/' + emb_file_name):
@@ -135,7 +136,7 @@ if not os.path.isfile('embs/' + emb_file_name):
 
     emb = list()
     for _, rows in tqdm(ldf.groupby(ldf.index // args.batch_size)):
-        emb.append(get_node_emb(rows.src.values.astype(np.int32), rows.time.values.astype(np.float32)))
+        emb.append(get_node_emb(rows.node.values.astype(np.int32), rows.time.values.astype(np.float32)))
     emb = torch.cat(emb, dim=0)
     torch.save(emb, 'embs/' + emb_file_name)
     print('Saved to embs/' + emb_file_name)
@@ -254,7 +255,7 @@ for e in range(args.epoch):
                 neg_idx = neg_node_sampler.sample(emb.shape[0])
                 emb = torch.cat([emb, emb_neg[neg_idx]], dim=0)
                 label = torch.cat([label, labels_neg[neg_idx]], dim=0)
-            pred = torch.softmax(model(emb))
+            pred = torch.exp(model(emb))
             if args.posneg:
                 acc = average_precision_score(label.cpu(), pred[:, 1].cpu())
             else:
@@ -290,4 +291,3 @@ with torch.no_grad():
     acc = float(torch.tensor(accs).mean())
     auc = float(torch.tensor(aucs_mrrs).mean())
 print('Testing acc: {:.4f}\tauc: {:.4f}'.format(acc, auc))
-print('Testing acc: {:.4f}'.format(acc))

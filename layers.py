@@ -356,8 +356,8 @@ class LinkDecoder_new(nn.Module):
             # print(w_h, w_e, w)
             # w = F.normalize(w, p=1, dim=-1)
 
-            probs = w[:, 0] * probs_h + w[:, 1] * probs_e
-            # probs = probs_h
+            # probs = w[:, 0] * probs_h + w[:, 1] * probs_e
+            probs = probs_h
 
             assert torch.min(probs) >= 0
             assert torch.max(probs) <= 1
