@@ -10,6 +10,7 @@ from torch.nn.modules.module import Module
 from geoopt.manifolds.stereographic import math as pmath
 from dgl.nn.pytorch.utils import Identity
 from layers import TimeEncode
+import manifolds
 
 class HGATLayer(torch.nn.Module):
     def __init__(self, dim_node_feat, dim_edge_feat, dim_time, num_head, dropout, att_dropout, dim_out, c_in, c_out, combined=False, negative_slope=0.2, residual=False, activation=None, bias=True):
@@ -176,3 +177,134 @@ class HypAct(Module):
         return 'c_in={}, c_out={}'.format(
             self.c_in, self.c_out
         )
+
+class LorentzLayer(nn.Module):
+    def __init__(self, dim_node_feat, dim_edge_feat, dim_time, num_head, dropout, att_dropout, dim_out, c_in, c_out, combined=False, negative_slope=0.2, manifold='Lorentz', residual=False, activation=None, bias=True, project=False):
+        super(LorentzLayer, self).__init__()
+        self.manifold = getattr(manifolds, manifold)()
+        self.num_head = num_head
+        self.dim_node_feat = dim_node_feat
+        self.dim_edge_feat = dim_edge_feat
+        self.dim_time = dim_time
+        self.dim_out = dim_out
+        self.leaky_relu = nn.LeakyReLU(negative_slope)
+        self.bias = bias
+        self.project = project
+        # self.activation = HypAct(c_in, c_out, 'relu')
+        self.bias = nn.Parameter(torch.zeros(()) + 20)
+        self.scale = nn.Parameter(torch.zeros(()) + math.sqrt(self.dim_out))
+        if dim_time > 0:
+            self.time_enc = TimeEncode(dim_time)
+        if project:
+            self.q_feats, self.kv_feats = dim_time + dim_node_feat, dim_time + dim_node_feat + dim_edge_feat
+        else:
+            self.q_feats, self.kv_feats = dim_time + dim_node_feat + 1, dim_time + dim_node_feat + dim_edge_feat + 1
+
+        self._out_feats = self.dim_out // self.num_head
+
+        self.linear_q = LorentzLinear(manifold, self.q_feats, self.dim_out, self.bias, dropout, nonlin=self.leaky_relu if negative_slope != 0 else None)
+        self.linear_kv = LorentzLinear(manifold, self.kv_feats, self.dim_out, self.bias, dropout, nonlin=self.leaky_relu if negative_slope != 0 else None)
+
+        self.w_q = LorentzLinear(manifold, self.dim_out, self.dim_out)
+        self.w_k = LorentzLinear(manifold, self.dim_out, self.dim_out)
+        self.w_v = LorentzLinear(manifold, self.dim_out, self.dim_out)
+
+    def forward(self, b):
+        assert(self.dim_time + self.dim_node_feat + self.dim_edge_feat > 0)
+        if b.num_edges() == 0:
+            return torch.zeros((b.num_dst_nodes(), self.dim_out)).cuda()
+
+        time_feat = self.time_enc(b.edata['dt'])
+        zero_time_feat = self.time_enc(torch.zeros(b.num_dst_nodes(), dtype=torch.float32).cuda())
+
+        if self.project:
+            q_node_feat = self.manifold.logmap0(b.srcdata['hyper'][:b.num_dst_nodes()])
+            Q = self.manifold.expmap0(torch.cat([q_node_feat, zero_time_feat], dim=1))[b.edges()[1]]
+
+            k_node_feat =  self.manifold.logmap0(b.srcdata['hyper'][b.num_dst_nodes():])
+            if self.dim_edge_feat == 0:
+                K = self.manifold.expmap0(torch.cat([k_node_feat, time_feat], dim=1))
+            else:
+                K = self.manifold.expmap0(torch.cat([k_node_feat, b.edata['f'], time_feat], dim=1))
+        else:
+            if self.dim_node_feat != 0 and self.dim_edge_feat != 0:
+                Q = torch.cat([b.srcdata['h'][:b.num_dst_nodes()], zero_time_feat], dim=1)[b.edges()[1]]
+                K = torch.cat([b.srcdata['h'][b.num_dst_nodes():], b.edata['f'], time_feat], dim=1)
+            elif self.dim_node_feat != 0 and self.dim_edge_feat == 0:
+                Q = torch.cat([b.srcdata['h'][:b.num_dst_nodes()], zero_time_feat], dim=1)[b.edges()[1]]
+                K = torch.cat([b.srcdata['h'][b.num_dst_nodes():], time_feat], dim=1)
+            elif self.dim_node_feat == 0 and self.dim_edge_feat != 0:
+                Q = zero_time_feat[b.edges()[1]]
+                K = torch.cat([b.edata['f'], time_feat], dim=1)
+            else:
+                Q = zero_time_feat[b.edges()[1]]
+                K = time_feat
+            qo = torch.zeros_like(Q)
+            ko = torch.zeros_like(K)
+            Q = self.manifold.expmap0(torch.cat([qo[:, 0:1], Q], dim=1))
+            K = self.manifold.expmap0(torch.cat([ko[:, 0:1], K], dim=1))
+
+        Q = self.linear_q(Q)
+        K = self.linear_kv(K)
+        Q = self.w_q(Q)
+        K = self.w_k(K)
+        V = self.w_v(K)
+
+        dist = 2 + 2 * self.manifold.inner(None, Q, K, keepdim=True, dim=-1)
+        attn = dist / self.scale + self.bias
+        attn = dgl.ops.edge_softmax(b, attn)
+        V = V * attn
+        b.srcdata['v'] = torch.cat([torch.zeros((b.num_dst_nodes(), V.shape[1])).cuda(), V], dim=0)
+        b.update_all(dgl.function.copy_u('v', 'm'), dgl.function.sum('m', 'h'))
+        if self.dim_node_feat != 0:
+            rst = torch.cat([b.dstdata['h'], b.srcdata['h'][:b.num_dst_nodes()]], dim=1)
+        else:
+            rst = b.dstdata['h']
+
+        denom = (-self.manifold.inner(None, rst, keepdim=True))
+        denom = denom.abs().clamp_min(1e-8).sqrt()
+        rst = rst / denom
+        return rst
+
+class LorentzLinear(nn.Module):
+    def __init__(self,
+                 manifold,
+                 in_features,
+                 out_features,
+                 bias=True,
+                 dropout=0.1,
+                 scale=10,
+                 fixscale=False,
+                 nonlin=None):
+        super().__init__()
+        self.manifold = manifold
+        self.nonlin = nonlin
+        self.in_features = in_features
+        self.out_features = out_features
+        self.bias = bias
+        self.weight = nn.Linear(
+            self.in_features, self.out_features, bias=bias)
+        self.reset_parameters()
+        self.dropout = nn.Dropout(dropout)
+        self.scale = nn.Parameter(torch.ones(()) * math.log(scale), requires_grad=not fixscale)
+
+    def forward(self, x):
+        if self.nonlin is not None:
+            x = self.nonlin(x)
+        x = self.weight(self.dropout(x))
+        x_narrow = x.narrow(-1, 1, x.shape[-1] - 1)
+        time = x.narrow(-1, 0, 1).sigmoid() * self.scale.exp() + 1.1
+        scale = (time * time - 1) / \
+            (x_narrow * x_narrow).sum(dim=-1, keepdim=True).clamp_min(1e-8)
+        x = torch.cat([time, x_narrow * scale.sqrt()], dim=-1)
+        return x
+
+    def reset_parameters(self):
+        stdv = 1. / math.sqrt(self.out_features)
+        step = self.in_features
+        nn.init.uniform_(self.weight.weight, -stdv, stdv)
+        with torch.no_grad():
+            for idx in range(0, self.in_features, step):
+                self.weight.weight[:, idx] = 0
+        if self.bias:
+            nn.init.constant_(self.weight.bias, 0)

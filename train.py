@@ -24,6 +24,7 @@ import numpy as np
 from modules import *
 from sampler import *
 from utils import *
+from math_utils import MarginLoss
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 def set_seed(seed):
@@ -69,7 +70,11 @@ if 'combine_neighs' in train_param and train_param['combine_neighs']:
     combine_first = True
 model = GeneralModel(gnn_dim_node, gnn_dim_edge, sample_param, memory_param, gnn_param, train_param, combined=combine_first).cuda()
 mailbox = MailBox(memory_param, g['indptr'].shape[0] - 1, gnn_dim_edge) if memory_param['type'] != 'none' else None
-creterion = torch.nn.BCELoss()
+if gnn_param['arch'] == 'GIL_Lorentz':
+    creterion = MarginLoss(train_param['margin'])
+
+else:
+    creterion = torch.nn.BCELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=train_param['lr'])
 # optimizer = RiemannianAdam(model.parameters(), lr=train_param['lr'])
 if 'all_on_gpu' in train_param and train_param['all_on_gpu']:
@@ -127,8 +132,12 @@ def eval(mode='val'):
             if mailbox is not None:
                 mailbox.prep_input_mails(mfgs[0])
             pred_pos, pred_neg = model(mfgs, neg_samples=neg_samples)
-            total_loss += creterion(pred_pos, torch.ones_like(pred_pos))
-            total_loss += creterion(pred_neg, torch.zeros_like(pred_neg))
+            if gnn_param['arch'] == 'GIL_Lorentz':
+                preds = torch.stack([pred_pos, pred_neg], dim=-1)
+                total_loss += creterion(preds)
+            else:
+                total_loss += creterion(pred_pos, torch.ones_like(pred_pos))
+                total_loss += creterion(pred_neg, torch.zeros_like(pred_neg))
             y_pred = torch.cat([pred_pos, pred_neg], dim=0).cpu()
             y_true = torch.cat([torch.ones(pred_pos.size(0)), torch.zeros(pred_neg.size(0))], dim=0)
             aps.append(average_precision_score(y_true, y_pred))

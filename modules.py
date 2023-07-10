@@ -52,18 +52,28 @@ class GeneralModel(torch.nn.Module):
                 for h in range(sample_param['history']):
                     self.layers['l' + str(l) + 'h' + str(h)] = TransfomerAttentionLayer(gnn_param['dim_out'], dim_edge, gnn_param['dim_time'], gnn_param['att_head'], train_param['dropout'], train_param['att_dropout'], gnn_param['dim_out'], combined=False)
                     self.layers['l' + str(l) + 'h' + str(h) + 'hyper'] = HGATLayer(gnn_param['dim_out'], dim_edge, gnn_param['dim_time'], gnn_param['att_head'], train_param['dropout'], train_param['att_dropout'], gnn_param['dim_out'], curvatures[l], curvatures[l+1], combined=False)
+        elif gnn_param['arch'] == 'GIL_Lorentz':
+            for h in range(sample_param['history']):
+                self.layers['l0h' + str(h)] = TransfomerAttentionLayer(self.dim_node_input, dim_edge, gnn_param['dim_time'], gnn_param['att_head'], train_param['dropout'], train_param['att_dropout'], gnn_param['dim_out'], combined=combined)
+                self.layers['l0h' + str(h) + 'hyper'] = LorentzLayer(self.dim_node_input, dim_edge, gnn_param['dim_time'], gnn_param['att_head'], train_param['dropout'], train_param['att_dropout'], gnn_param['dim_out'], curvatures[0], curvatures[1], combined=combined, negative_slope=0)
+            for l in range(1, gnn_param['layer']):
+                for h in range(sample_param['history']):
+                    self.layers['l' + str(l) + 'h' + str(h)] = TransfomerAttentionLayer(gnn_param['dim_out'], dim_edge, gnn_param['dim_time'], gnn_param['att_head'], train_param['dropout'], train_param['att_dropout'], gnn_param['dim_out'], combined=False)
+                    self.layers['l' + str(l) + 'h' + str(h) + 'hyper'] = LorentzLayer(gnn_param['dim_out'], dim_edge, gnn_param['dim_time'], gnn_param['att_head'], train_param['dropout'], train_param['att_dropout'], gnn_param['dim_out'], curvatures[l], curvatures[l+1], combined=False, project=True)
         else:
             raise NotImplementedError
         
         if gnn_param['arch'] == 'GIL':
             self.edge_predictor = LinkDecoder_new(gnn_param['dim_out'], curvatures[-1])
             print(curvatures)
+        elif  gnn_param['arch'] == 'GIL_Lorentz':
+            self.edge_predictor = LinkDecoder_Lorentz(gnn_param['dim_out'], curvatures[-1])
         else:
             self.edge_predictor = EdgePredictor(gnn_param['dim_out'])
         if 'combine' in gnn_param and gnn_param['combine'] == 'rnn':
             self.combiner = torch.nn.RNN(gnn_param['dim_out'], gnn_param['dim_out'])
 
-        if gnn_param['arch'] == 'GIL':
+        if gnn_param['arch'] == 'GIL' or gnn_param['arch'] == 'GIL_Lorentz':
             self.h_fusion = HFusion(train_param['dropout'])
             self.e_fusion = EFusion(train_param['dropout'])
     
@@ -74,12 +84,12 @@ class GeneralModel(torch.nn.Module):
         for l in range(self.gnn_param['layer']):
             for h in range(self.sample_param['history']):
                 rst = self.layers['l' + str(l) + 'h' + str(h)](mfgs[l][h])
-                if self.gnn_param['arch'] == 'GIL':
+                if self.gnn_param['arch'] == 'GIL' or self.gnn_param['arch'] == 'GIL_Lorentz':
                     rst_h = self.layers['l' + str(l) + 'h' + str(h) + 'hyper'](mfgs[l][h])
                 if 'time_transform' in self.gnn_param and self.gnn_param['time_transform'] == 'JODIE':
                     rst = self.layers['l0h' + str(h) + 't'](rst, mfgs[l][h].srcdata['mem_ts'], mfgs[l][h].srcdata['ts'])
                 if l != self.gnn_param['layer'] - 1:
-                    if self.gnn_param['arch'] == 'GIL':
+                    if self.gnn_param['arch'] == 'GIL' or self.gnn_param['arch'] == 'GIL_Lorentz':
                         if self.use_fusion:
                             f_h = self.h_fusion(rst_h, rst, self.curvatures[l+1])
                             f_e = self.e_fusion(rst_h, rst, self.curvatures[l+1])
@@ -91,7 +101,7 @@ class GeneralModel(torch.nn.Module):
                     else:
                         mfgs[l + 1][h].srcdata['h'] = rst
                 else:
-                    if self.gnn_param['arch'] == 'GIL':
+                    if self.gnn_param['arch'] == 'GIL' or self.gnn_param['arch'] == 'GIL_Lorentz':
                         if self.use_fusion:
                             rst_h = self.h_fusion(rst_h, rst, self.curvatures[l+1])
                             rst = self.e_fusion(rst_h, rst, self.curvatures[l+1])      
@@ -112,12 +122,12 @@ class GeneralModel(torch.nn.Module):
         for l in range(self.gnn_param['layer']):
             for h in range(self.sample_param['history']):
                 rst = self.layers['l' + str(l) + 'h' + str(h)](mfgs[l][h])
-                if self.gnn_param['arch'] == 'GIL':
+                if self.gnn_param['arch'] == 'GIL' or self.gnn_param['arch'] == 'GIL_Lorentz':
                     rst_h = self.layers['l' + str(l) + 'h' + str(h) + 'hyper'](mfgs[l][h])
                 if 'time_transform' in self.gnn_param and self.gnn_param['time_transform'] == 'JODIE':
                     rst = self.layers['l0h' + str(h) + 't'](rst, mfgs[l][h].srcdata['mem_ts'], mfgs[l][h].srcdata['ts'])
                 if l != self.gnn_param['layer'] - 1:
-                    if self.gnn_param['arch'] == 'GIL':
+                    if self.gnn_param['arch'] == 'GIL' or self.gnn_param['arch'] == 'GIL_Lorentz':
                         if self.use_fusion:
                             f_h = self.h_fusion(rst_h, rst, self.curvatures[l+1])
                             f_e = self.e_fusion(rst_h, rst, self.curvatures[l+1])
@@ -129,7 +139,7 @@ class GeneralModel(torch.nn.Module):
                     else:
                         mfgs[l + 1][h].srcdata['h'] = rst
                 else:
-                    if self.gnn_param['arch'] == 'GIL':
+                    if self.gnn_param['arch'] == 'GIL' or self.gnn_param['arch'] == 'GIL_Lorentz':
                         if self.use_fusion:
                             rst_h = self.h_fusion(rst_h, rst, self.curvatures[l+1])
                             rst = self.e_fusion(rst_h, rst, self.curvatures[l+1])      

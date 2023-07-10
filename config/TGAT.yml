@@ -25,3 +25,4 @@ train:
     att_dropout: 0.1
     all_on_gpu: True
     use_fusion: False
+    margin: 2.0

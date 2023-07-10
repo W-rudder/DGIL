@@ -179,9 +179,6 @@ for e in range(train_param['epoch']):
             ret = sampler.get_ret()
             time_sample += ret[0].sample_time()
         t_prep_s = time.time()
-        print(len(ret), len(rows))
-        print(root_nodes, len(root_nodes))
-        print(ts)
         print('-----------')
         if gnn_param['arch'] != 'identity':
             mfgs = to_dgl_blocks(ret, sample_param['history'])

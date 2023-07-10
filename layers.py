@@ -8,6 +8,7 @@ from geoopt.manifolds.stereographic import PoincareBall
 import torch.nn.functional as F
 import geoopt
 import geoopt.manifolds.stereographic.math as pmath
+import manifolds
 
 class TimeEncode(torch.nn.Module):
 
@@ -369,6 +370,86 @@ class LinkDecoder_new(nn.Module):
         #     probs = self.dc.forward(sqdist)
 
         return probs
+
+    def forward(self, h, neg_samples=1):
+        pos_scores = self.decode(h, mode='pos', neg_samples=neg_samples)
+        neg_scores = self.decode(h, mode='neg', neg_samples=neg_samples)
+
+        return pos_scores, neg_scores
+
+class LinkDecoder_Lorentz(nn.Module):
+    """
+    Base model for link prediction task.
+    """
+
+    def __init__(self, dim_out, c, manifold_name='Lorentz'):
+        super(LinkDecoder_Lorentz, self).__init__()
+        self.manifold = getattr(manifolds, manifold_name)()
+        self.dc = FermiDiracDecoder()
+        self.w_e = nn.Linear(dim_out, 1, bias=False)
+        # self.w_h = nn.Linear(dim_out, 1, bias=False)
+        self.fc_src = nn.Linear(dim_out, dim_out)
+        self.fc_dst = nn.Linear(dim_out, dim_out)
+        self.fc_out = nn.Linear(dim_out, 1)
+        self.drop_e = 0
+        self.drop_h = 0
+        self.c = torch.tensor([1.0])
+        self.reset_param()
+
+    def reset_param(self):
+        self.w_e.reset_parameters()
+        # self.w_h.reset_parameters()
+
+    def decode(self, h, mode,neg_samples=1):
+        num_edge = h[0].shape[0] // (neg_samples + 2)
+        if isinstance(h, tuple):
+            if mode == 'pos':
+                # pos instancs
+                emb_in = h[0][:num_edge, :]
+                emb_out = h[0][num_edge:2 * num_edge, :]
+                emb_in_e = self.fc_src(h[1][:num_edge, :])
+                emb_out_e = self.fc_dst(h[1][num_edge:2 * num_edge, :])
+            else:
+                # neg instance
+                emb_in = h[0][:num_edge, :].tile(neg_samples, 1)
+                emb_out = h[0][2 * num_edge:, :]
+                emb_in_e = self.fc_src(h[1][:num_edge, :]).tile(neg_samples, 1)
+                emb_out_e = self.fc_dst(h[1][2 * num_edge:, :])
+
+            "compute hyperbolic dist"
+            sqdist = -self.manifold.sqdist(emb_in, emb_out, self.c)
+
+            sqdist_h = pmath.dist(emb_in, emb_out, k=-self.c) ** 2
+            # emb_in = ball.logmap0(emb_in)
+            # emb_out = ball.logmap0(emb_out)
+            # sqdist_h = torch.sqrt((emb_in - emb_out).pow(2).sum(dim=-1) + 1e-15)
+            probs_h = self.dc.forward(sqdist_h)
+
+            "compute dist in Euclidean"
+            h_edge = torch.nn.functional.relu(emb_in_e + emb_out_e)
+            probs_e = torch.sigmoid(self.fc_out(h_edge).view(-1))
+
+            # sub
+            w_e = torch.sigmoid(self.w_e(emb_in_e + emb_out_e).view(-1))
+            w_h = 1 - w_e
+            w = torch.cat([w_h.view(-1, 1), w_e.view(-1, 1)], dim=-1)
+            # print('------w')
+            # print(w_h, w_e, w)
+            # w = F.normalize(w, p=1, dim=-1)
+
+            # probs = w[:, 0] * probs_h + w[:, 1] * probs_e
+            probs = probs_h
+
+            assert torch.min(probs) >= 0
+            assert torch.max(probs) <= 1
+        # else:
+        #     emb_in = h[idx[:, 0], :]
+        #     emb_out = h[idx[:, 1], :]
+        #     sqdist = self.manifold.sqdist(emb_in, emb_out, self.c)
+        #     assert torch.max(sqdist) >= 0
+        #     probs = self.dc.forward(sqdist)
+
+        return sqdist
 
     def forward(self, h, neg_samples=1):
         pos_scores = self.decode(h, mode='pos', neg_samples=neg_samples)
