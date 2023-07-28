@@ -78,9 +78,9 @@ if not os.path.isfile('embs/' + emb_file_name):
     optimizer = torch.optim.Adam(model.parameters(), lr=train_param['lr'])
     if 'all_on_gpu' in train_param and train_param['all_on_gpu']:
         if node_feats is not None:
-            node_feats = node_feats.cuda()
+            node_feats = node_feats.to(device)
         if edge_feats is not None:
-            edge_feats = edge_feats.cuda()
+            edge_feats = edge_feats.to(device)
         if mailbox is not None:
             mailbox.move_to_gpu()
 
@@ -203,7 +203,7 @@ if gnn_param['arch'] == 'GIL_Lorentz':
                                     lr=args.lr,
                                     stabilize=10)
 else:
-    model = NodeClassificationModel(emb.shape[1], args.dim, labels.max() + 1, c).cuda()
+    model = NodeClassificationModel(emb.shape[1], args.dim, labels.max() + 1, c).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
 loss_fn = torch.nn.NLLLoss()
