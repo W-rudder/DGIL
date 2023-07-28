@@ -179,7 +179,7 @@ class HypAct(Module):
         )
 
 class LorentzLayer(nn.Module):
-    def __init__(self, dim_node_feat, dim_edge_feat, dim_time, num_head, dropout, att_dropout, dim_out, c_in, c_out, combined=False, negative_slope=0.2, manifold='Lorentz', residual=False, activation=None, bias=True, project=False):
+    def __init__(self, dim_node_feat, dim_edge_feat, dim_time, num_head, dropout, att_dropout, dim_out, c_in, c_out, device, combined=False, negative_slope=0.2, manifold='Lorentz', residual=False, activation=None, bias=True, project=False):
         super(LorentzLayer, self).__init__()
         self.manifold = getattr(manifolds, manifold)()
         self.num_head = num_head
@@ -190,8 +190,9 @@ class LorentzLayer(nn.Module):
         self.leaky_relu = nn.LeakyReLU(negative_slope)
         self.bias = bias
         self.project = project
+        self.device = device
         # self.activation = HypAct(c_in, c_out, 'relu')
-        self.bias = nn.Parameter(torch.zeros(()) + 20)
+        # self.bias = nn.Parameter(torch.zeros(()) + 20)
         self.scale = nn.Parameter(torch.zeros(()) + math.sqrt(self.dim_out))
         if dim_time > 0:
             self.time_enc = TimeEncode(dim_time)
@@ -212,58 +213,86 @@ class LorentzLayer(nn.Module):
     def forward(self, b):
         assert(self.dim_time + self.dim_node_feat + self.dim_edge_feat > 0)
         if b.num_edges() == 0:
-            return torch.zeros((b.num_dst_nodes(), self.dim_out)).cuda()
+            return torch.zeros((b.num_dst_nodes(), self.dim_out)).to(self.device)
+        self_loop = [i for i in range(b.num_dst_nodes())]
+        num_dst_nodes = b.num_dst_nodes()
+        num_src_nodes = b.num_src_nodes()
+        num_edges = len(b.edges()[0])
 
         time_feat = self.time_enc(b.edata['dt'])
-        zero_time_feat = self.time_enc(torch.zeros(b.num_dst_nodes(), dtype=torch.float32).cuda())
+        zero_time_feat = self.time_enc(torch.zeros(b.num_dst_nodes(), dtype=torch.float32)).to(self.device)
 
         if self.project:
-            q_node_feat = self.manifold.logmap0(b.srcdata['hyper'][:b.num_dst_nodes()])
-            Q = self.manifold.expmap0(torch.cat([q_node_feat, zero_time_feat], dim=1))[b.edges()[1]]
+            q_node_feat = b.srcdata['hyper'][:b.num_dst_nodes()]
+            Q = self.manifold.expmap0(torch.cat([q_node_feat, zero_time_feat], dim=1))
 
-            k_node_feat =  self.manifold.logmap0(b.srcdata['hyper'][b.num_dst_nodes():])
+            k_node_feat = b.srcdata['hyper'][b.num_dst_nodes():]
             if self.dim_edge_feat == 0:
                 K = self.manifold.expmap0(torch.cat([k_node_feat, time_feat], dim=1))
             else:
                 K = self.manifold.expmap0(torch.cat([k_node_feat, b.edata['f'], time_feat], dim=1))
         else:
             if self.dim_node_feat != 0 and self.dim_edge_feat != 0:
-                Q = torch.cat([b.srcdata['h'][:b.num_dst_nodes()], zero_time_feat], dim=1)[b.edges()[1]]
+                Q = torch.cat([b.srcdata['h'][:b.num_dst_nodes()], zero_time_feat], dim=1)
                 K = torch.cat([b.srcdata['h'][b.num_dst_nodes():], b.edata['f'], time_feat], dim=1)
             elif self.dim_node_feat != 0 and self.dim_edge_feat == 0:
-                Q = torch.cat([b.srcdata['h'][:b.num_dst_nodes()], zero_time_feat], dim=1)[b.edges()[1]]
+                Q = torch.cat([b.srcdata['h'][:b.num_dst_nodes()], zero_time_feat], dim=1)
                 K = torch.cat([b.srcdata['h'][b.num_dst_nodes():], time_feat], dim=1)
             elif self.dim_node_feat == 0 and self.dim_edge_feat != 0:
-                Q = zero_time_feat[b.edges()[1]]
+                Q = zero_time_feat
                 K = torch.cat([b.edata['f'], time_feat], dim=1)
             else:
-                Q = zero_time_feat[b.edges()[1]]
+                Q = zero_time_feat
                 K = time_feat
             qo = torch.zeros_like(Q)
             ko = torch.zeros_like(K)
             Q = self.manifold.expmap0(torch.cat([qo[:, 0:1], Q], dim=1))
             K = self.manifold.expmap0(torch.cat([ko[:, 0:1], K], dim=1))
 
-        Q = self.linear_q(Q)
-        K = self.linear_kv(K)
+        Q_ori = self.linear_q(Q)
+        Q = torch.cat([Q_ori[b.edges()[1]], Q_ori])
+        K_ori = self.linear_kv(K)
+        # print(self.linear_q.weight.weight, self.linear_q.weight.bias)
+        # print(self.linear_kv.weight.weight, self.linear_kv.weight.bias)
+        K = torch.cat([K_ori, Q_ori], dim=0)
         Q = self.w_q(Q)
         K = self.w_k(K)
         V = self.w_v(K)
 
+        b.add_edges(self_loop, self_loop)
+        c = dgl.create_block((b.edges()[0], b.edges()[1]), num_src_nodes=num_src_nodes, num_dst_nodes=num_dst_nodes)
+        b = c
         dist = 2 + 2 * self.manifold.inner(None, Q, K, keepdim=True, dim=-1)
-        attn = dist / self.scale + self.bias
+        attn = dist / self.scale
         attn = dgl.ops.edge_softmax(b, attn)
         V = V * attn
-        b.srcdata['v'] = torch.cat([torch.zeros((b.num_dst_nodes(), V.shape[1])).cuda(), V], dim=0)
-        b.update_all(dgl.function.copy_u('v', 'm'), dgl.function.sum('m', 'h'))
-        if self.dim_node_feat != 0:
-            rst = torch.cat([b.dstdata['h'], b.srcdata['h'][:b.num_dst_nodes()]], dim=1)
-        else:
-            rst = b.dstdata['h']
 
+        b.srcdata['v'] = torch.cat([V[num_edges:], V[:num_edges]], dim=0)
+        b.update_all(dgl.function.copy_u('v', 'm'), dgl.function.sum('m', 'h'))
+        rst = b.dstdata['h']
         denom = (-self.manifold.inner(None, rst, keepdim=True))
         denom = denom.abs().clamp_min(1e-8).sqrt()
+        # print(rst)
+        # print(torch.isnan(rst).int().sum(), torch.isnan(denom).int().sum())
         rst = rst / denom
+        # for i in range(rst.shape[0]):
+        #     # print(int(self.manifold.inner(None, rst[i])) == -1)
+        #     if abs(self.manifold.inner(None, rst[i]).item() + 1.0) > 1e-3:
+        #         print(self.manifold.inner(None, rst[i]).item())
+        #         print(rst[i])
+        #         print(self.project)
+        #         print(torch.equal(self.manifold.inner(None, rst[i]), torch.tensor([-1.0])))
+            # assert torch.equal(self.manifold.inner(None, rst[i]), torch.tensor([-1.0]))
+            # assert self.manifold.check_point_on_manifold(rst[i])
+        assert torch.isnan(rst).int().sum() <= 0
+        
+        if self.project:
+            # rst = self.manifold.expmap0(rst)
+            # for i in range(rst.shape[0]):
+            #     assert self.manifold.check_point_on_manifold(rst[i])
+            pass
+        else:
+            rst = self.manifold.logmap0(rst)
         return rst
 
 class LorentzLinear(nn.Module):

@@ -26,12 +26,22 @@ def load_feat(d, rand_de=0, rand_dn=0):
         if d == 'LASTFM':
             node_feats = torch.randn(1980, rand_dn)
         elif d == 'MOOC':
-            edge_feats = torch.randn(7144, rand_dn)
+            node_feats = torch.randn(7144, rand_dn)
+        elif d in ['telecom', 'telecom_new']:
+            node_feats = torch.randn(1948069, rand_dn)
+            # node_feats = torch.nn.Embedding(num_embeddings=1948069,
+            #                             embedding_dim=rand_dn)
+
+            # node_feats.state_dict()['weight'].uniform_(-0.1, 0.1)
+            # node_feats.weight = torch.nn.Parameter(node_feats.state_dict()['weight'])
+        elif d == 'WIKI':
+            node_feats = torch.randn(9228, rand_dn)
     return node_feats, edge_feats
 
 def load_graph(d):
     df = pd.read_csv('DATA/{}/edges.csv'.format(d))
     g = np.load('DATA/{}/ext_full.npz'.format(d))
+    print(df.dst.max(), df.src.max())
     return g, df
 
 def parse_config(f):
@@ -42,7 +52,7 @@ def parse_config(f):
     train_param = conf['train'][0]
     return sample_param, memory_param, gnn_param, train_param
 
-def to_dgl_blocks(ret, hist, reverse=False, cuda=True):
+def to_dgl_blocks(ret, hist, device, reverse=False):
     mfgs = list()
     for r in ret:
         if not reverse:
@@ -56,10 +66,7 @@ def to_dgl_blocks(ret, hist, reverse=False, cuda=True):
             b.edata['dt'] = torch.from_numpy(r.dts())[b.num_src_nodes():]
             b.dstdata['ts'] = torch.from_numpy(r.ts())
         b.edata['ID'] = torch.from_numpy(r.eid())
-        if cuda:
-            mfgs.append(b.to('cuda:0'))
-        else:
-            mfgs.append(b)
+        mfgs.append(b.to(device))
     mfgs = list(map(list, zip(*[iter(mfgs)] * hist)))
     mfgs.reverse()
     return mfgs
@@ -81,7 +88,7 @@ def mfgs_to_cuda(mfgs):
             mfg[i] = mfg[i].to('cuda:0')
     return mfgs
 
-def prepare_input(mfgs, node_feats, edge_feats, combine_first=False, pinned=False, nfeat_buffs=None, efeat_buffs=None, nids=None, eids=None):
+def prepare_input(mfgs, node_feats, edge_feats, combine_first=False, pinned=False, nfeat_buffs=None, efeat_buffs=None, nids=None, eids=None, device=None):
     if combine_first:
         for i in range(len(mfgs[0])):
             if mfgs[0][i].num_src_nodes() > mfgs[0][i].num_dst_nodes():
@@ -114,7 +121,8 @@ def prepare_input(mfgs, node_feats, edge_feats, combine_first=False, pinned=Fals
                 i += 1
             else:
                 srch = node_feats[b.srcdata['ID'].long()].float()
-                b.srcdata['h'] = srch.cuda()
+                # srch = node_feats(b.srcdata['ID'].long()).float()
+                b.srcdata['h'] = srch.to(device)
     i = 0
     if edge_feats is not None:
         for mfg in mfgs:
@@ -130,7 +138,7 @@ def prepare_input(mfgs, node_feats, edge_feats, combine_first=False, pinned=Fals
                         i += 1
                     else:
                         srch = edge_feats[b.edata['ID'].long()].float()
-                        b.edata['f'] = srch.cuda()
+                        b.edata['f'] = srch.to(device)
     return mfgs
 
 def get_ids(mfgs, node_feats, edge_feats):

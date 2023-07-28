@@ -301,7 +301,7 @@ class ParallelSampler
                         }
                         // std::cout << n << " " << s_search << " " << e_search << std::endl;
                         double t_sample_s = omp_get_wtime();
-                        if ((recent) || (e_search - s_search < neighs))
+                        if (recent)
                         {                            
                             // no sampling, pick recent neighbors
                             // std::cout << n << " " << s_search << " " << e_search << std::endl;
@@ -319,14 +319,17 @@ class ParallelSampler
                         }
                         else
                         {
-                            // random sampling within ptr
-                            for (int _i = 0; _i < neighs; _i++)
+                            if (e_search - s_search > 0)
                             {
-                                EdgeIDType picked = s_search + rand_r(&loc_seed) % (e_search - s_search + 1);
-                                if (ts[picked] < nts + offset - 1e-7f)
+                            // random sampling within ptr
+                                for (int _i = 0; _i < neighs; _i++)
                                 {
-                                    add_neighbor(_row[tid], _col[tid], _eid[tid], _ts[tid], 
-                                                 _dts[tid], _nodes[tid], picked, nts, _out_node[tid]);
+                                    EdgeIDType picked = s_search + rand_r(&loc_seed) % (e_search - s_search + 1);
+                                    if (ts[picked] < nts + offset - 1e-7f)
+                                    {
+                                        add_neighbor(_row[tid], _col[tid], _eid[tid], _ts[tid], 
+                                                    _dts[tid], _nodes[tid], picked, nts, _out_node[tid]);
+                                    }
                                 }
                             }
                         }
