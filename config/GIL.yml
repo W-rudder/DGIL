@@ -16,8 +16,8 @@ gnn:
     layer: 2
     att_head: 1
     dim_time: 100
-    dim_out1: 150
-    dim_out2: 150
+    dim_out1: 100
+    dim_out2: 100
     t_c: True
 train:
   - epoch: 100
