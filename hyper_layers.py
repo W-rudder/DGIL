@@ -214,13 +214,13 @@ class LorentzLayer(nn.Module):
         assert(self.dim_time + self.dim_node_feat + self.dim_edge_feat > 0)
         if b.num_edges() == 0:
             return torch.zeros((b.num_dst_nodes(), self.dim_out)).to(self.device)
-        self_loop = [i for i in range(b.num_dst_nodes())]
+        self_loop = torch.tensor([i for i in range(b.num_dst_nodes())], device=self.device)
         num_dst_nodes = b.num_dst_nodes()
         num_src_nodes = b.num_src_nodes()
         num_edges = len(b.edges()[0])
 
         time_feat = self.time_enc(b.edata['dt'])
-        zero_time_feat = self.time_enc(torch.zeros(b.num_dst_nodes(), dtype=torch.float32)).to(self.device)
+        zero_time_feat = self.time_enc(torch.zeros(b.num_dst_nodes(), dtype=torch.float32).to(self.device))
 
         if self.project:
             q_node_feat = b.srcdata['hyper'][:b.num_dst_nodes()]
@@ -256,8 +256,10 @@ class LorentzLayer(nn.Module):
         # print(self.linear_kv.weight.weight, self.linear_kv.weight.bias)
         K = torch.cat([K_ori, Q_ori], dim=0)
         Q = self.w_q(Q)
-        K = self.w_k(K)
+        # do not modify
         V = self.w_v(K)
+        K = self.w_k(K)
+        
 
         b.add_edges(self_loop, self_loop)
         c = dgl.create_block((b.edges()[0], b.edges()[1]), num_src_nodes=num_src_nodes, num_dst_nodes=num_dst_nodes)
@@ -284,7 +286,7 @@ class LorentzLayer(nn.Module):
         #         print(torch.equal(self.manifold.inner(None, rst[i]), torch.tensor([-1.0])))
             # assert torch.equal(self.manifold.inner(None, rst[i]), torch.tensor([-1.0]))
             # assert self.manifold.check_point_on_manifold(rst[i])
-        assert torch.isnan(rst).int().sum() <= 0
+        
         
         if self.project:
             # rst = self.manifold.expmap0(rst)
@@ -293,6 +295,7 @@ class LorentzLayer(nn.Module):
             pass
         else:
             rst = self.manifold.logmap0(rst)
+        assert torch.isnan(rst).int().sum() <= 0
         return rst
 
 class LorentzLinear(nn.Module):

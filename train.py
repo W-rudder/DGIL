@@ -14,6 +14,7 @@ parser.add_argument('--patience', type=int, default=15, help='early stop')
 parser.add_argument('--eval_neg_samples', type=int, default=1, help='how many negative samples to use at inference. Note: this will change the metric of test set to AP+AUC to AP+MRR!')
 args=parser.parse_args()
 
+import logging
 import torch
 import time
 import random
@@ -39,6 +40,22 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
 
 set_seed(0)
+# torch.set_default_dtype(torch.float64)
+
+### set up logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+fh = logging.FileHandler('log/{}_{}.log'.format(args.model_name, time.strftime("%Y-%m-%d-%H-%M", time.localtime())))
+fh.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+ch.setLevel(logging.WARN)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+ch.setFormatter(formatter)
+logger.addHandler(fh)
+logger.addHandler(ch)
+logger.info(args)
 
 node_feats, edge_feats = load_feat(args.data, args.rand_edge_features, args.rand_node_features)
 g, df = load_graph(args.data)
@@ -118,11 +135,12 @@ if 'all_on_gpu' in train_param and train_param['all_on_gpu']:
         mailbox.move_to_gpu()
 
 sampler = None
+has_ngh = np.load("./node_ngh.npy")
 if not ('no_sample' in sample_param and sample_param['no_sample']):
     sampler = ParallelSampler(g['indptr'], g['indices'], g['eid'], g['ts'].astype(np.float32),
                               sample_param['num_thread'], 1, sample_param['layer'], sample_param['neighbor'],
                               sample_param['strategy']=='recent', sample_param['prop_time'],
-                              sample_param['history'], float(sample_param['duration']))
+                              sample_param['history'], float(sample_param['duration']), has_ngh)
 
 if args.use_inductive:
     test_df = df[val_edge_end:]
@@ -209,6 +227,7 @@ no_improve = 0
 val_losses = list()
 group_indexes = list()
 group_indexes.append(np.array(df[:train_edge_end].index // train_param['batch_size']))
+# model.load_state_dict(torch.load(path_saver))
 if 'reorder' in train_param:
     # random chunk shceduling
     reorder = train_param['reorder']
@@ -237,6 +256,7 @@ for e in range(train_param['epoch']):
 
     pbar = tqdm(total=len(df[:train_edge_end].groupby(group_indexes[random.randint(0, len(group_indexes) - 1)])))
     pbar.set_description('Epoch {:d}:'.format(e))
+    logger.info('Epoch {:d}:'.format(e))
     for _, rows in df[:train_edge_end].groupby(group_indexes[random.randint(0, len(group_indexes) - 1)]):
         t_tot_s = time.time()
         root_nodes = np.concatenate([rows.src.values, rows.dst.values, neg_link_sampler.sample(len(rows))]).astype(np.int32)
@@ -295,14 +315,14 @@ for e in range(train_param['epoch']):
         torch.save(model.state_dict(), path_saver)
     else:
         no_improve += 1
-    print('\ttrain loss:{:.4f}  val ap:{:4f}  val auc:{:4f}'.format(total_loss, ap, auc))
-    print('\ttotal time:{:.2f}s sample time:{:.2f}s prep time:{:.2f}s'.format(time_tot, time_sample, time_prep))
-    print('model c: {}'.format(model.curvatures))
+    logger.info('\ttrain loss:{:.4f}  val ap:{:4f}  val auc:{:4f}'.format(total_loss, ap, auc))
+    logger.info('\ttotal time:{:.2f}s sample time:{:.2f}s prep time:{:.2f}s'.format(time_tot, time_sample, time_prep))
+    logger.info('model c: {}'.format(model.curvatures))
     if no_improve > args.patience:
-        print('No improve over {} epochs, stop training'.format(args.patience))
+        logger.info('No improve over {} epochs, stop training'.format(args.patience))
         break
 
-print('Loading model at epoch {}...'.format(best_e))
+logger.info('Loading model at epoch {}...'.format(best_e))
 model.load_state_dict(torch.load(path_saver))
 model.eval()
 if sampler is not None:
@@ -314,6 +334,6 @@ if mailbox is not None:
     eval('val')
 ap, auc = eval('test')
 if args.eval_neg_samples > 1:
-    print('\ttest AP:{:4f}  test MRR:{:4f}'.format(ap, auc))
+    logger.info('\ttest AP:{:4f}  test MRR:{:4f}'.format(ap, auc))
 else:
-    print('\ttest AP:{:4f}  test AUC:{:4f}'.format(ap, auc))
+    logger.info('\ttest AP:{:4f}  test AUC:{:4f}'.format(ap, auc))

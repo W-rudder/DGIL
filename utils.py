@@ -15,6 +15,7 @@ def load_feat(d, rand_de=0, rand_dn=0):
     edge_feats = None
     if os.path.exists('DATA/{}/edge_features.pt'.format(d)):
         edge_feats = torch.load('DATA/{}/edge_features.pt'.format(d))
+        edge_feats = torch.cat([edge_feats, torch.tensor([[1.0]])], dim=0)
         if edge_feats.dtype == torch.bool:
             edge_feats = edge_feats.type(torch.float32)
     if rand_de > 0:
@@ -40,7 +41,7 @@ def load_feat(d, rand_de=0, rand_dn=0):
 
 def load_graph(d):
     df = pd.read_csv('DATA/{}/edges.csv'.format(d))
-    g = np.load('DATA/{}/ext_full.npz'.format(d))
+    g = np.load('DATA/{}/new_ext_full.npz'.format(d))
     print(df.dst.max(), df.src.max())
     return g, df
 

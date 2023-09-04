@@ -1,0 +1,115 @@
+2023-09-03 17:36:19,648 - root - INFO - Namespace(config='./config/GIL.yml', data='telecom_new', eval_neg_samples=1, gpu='0', model_name='Lorentz_neg', patience=15, rand_edge_features=0, rand_node_features=50, use_inductive=False)
+2023-09-03 18:07:50,276 - root - INFO - 	train loss:1317896.5205  val ap:0.979721  val auc:0.979790
+2023-09-03 18:07:50,276 - root - INFO - 	total time:1687.54s sample time:1.56s prep time:689.66s
+2023-09-03 18:07:50,282 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-03 18:38:44,645 - root - INFO - 	train loss:1149109.8864  val ap:0.982774  val auc:0.982822
+2023-09-03 18:38:44,645 - root - INFO - 	total time:1673.45s sample time:1.53s prep time:690.81s
+2023-09-03 18:38:44,647 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-03 19:09:37,408 - root - INFO - 	train loss:1111396.6903  val ap:0.985080  val auc:0.985102
+2023-09-03 19:09:37,409 - root - INFO - 	total time:1672.00s sample time:1.52s prep time:691.42s
+2023-09-03 19:09:37,410 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-03 19:40:30,125 - root - INFO - 	train loss:1089135.5499  val ap:0.985886  val auc:0.985815
+2023-09-03 19:40:30,126 - root - INFO - 	total time:1671.77s sample time:1.51s prep time:691.02s
+2023-09-03 19:40:30,128 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-03 20:11:19,899 - root - INFO - 	train loss:1074689.3873  val ap:0.985742  val auc:0.985690
+2023-09-03 20:11:19,900 - root - INFO - 	total time:1669.79s sample time:1.53s prep time:691.42s
+2023-09-03 20:11:19,901 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-03 20:42:06,482 - root - INFO - 	train loss:1081951.7429  val ap:0.985642  val auc:0.985740
+2023-09-03 20:42:06,482 - root - INFO - 	total time:1666.41s sample time:1.50s prep time:691.57s
+2023-09-03 20:42:06,483 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-03 21:12:53,462 - root - INFO - 	train loss:1059392.1714  val ap:0.986794  val auc:0.986799
+2023-09-03 21:12:53,465 - root - INFO - 	total time:1666.89s sample time:1.53s prep time:691.42s
+2023-09-03 21:12:53,467 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-03 21:43:41,718 - root - INFO - 	train loss:1049706.8011  val ap:0.985947  val auc:0.986081
+2023-09-03 21:43:41,719 - root - INFO - 	total time:1667.79s sample time:1.53s prep time:691.87s
+2023-09-03 21:43:41,720 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-03 22:14:28,699 - root - INFO - 	train loss:1044937.9311  val ap:0.987631  val auc:0.987626
+2023-09-03 22:14:28,700 - root - INFO - 	total time:1666.49s sample time:1.50s prep time:691.86s
+2023-09-03 22:14:28,701 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-03 22:45:15,524 - root - INFO - 	train loss:1040088.9151  val ap:0.988081  val auc:0.988085
+2023-09-03 22:45:15,525 - root - INFO - 	total time:1666.69s sample time:1.50s prep time:691.95s
+2023-09-03 22:45:15,526 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-03 23:16:01,674 - root - INFO - 	train loss:1033916.0907  val ap:0.988429  val auc:0.988393
+2023-09-03 23:16:01,674 - root - INFO - 	total time:1665.94s sample time:1.51s prep time:691.77s
+2023-09-03 23:16:01,676 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-03 23:46:48,335 - root - INFO - 	train loss:1029733.2887  val ap:0.988327  val auc:0.988304
+2023-09-03 23:46:48,335 - root - INFO - 	total time:1666.69s sample time:1.51s prep time:692.12s
+2023-09-03 23:46:48,336 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-04 00:17:34,808 - root - INFO - 	train loss:1025643.2197  val ap:0.988790  val auc:0.988770
+2023-09-04 00:17:34,808 - root - INFO - 	total time:1666.50s sample time:1.51s prep time:691.87s
+2023-09-04 00:17:34,810 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-04 00:48:21,924 - root - INFO - 	train loss:1021123.1378  val ap:0.988663  val auc:0.988664
+2023-09-04 00:48:21,924 - root - INFO - 	total time:1666.94s sample time:1.51s prep time:691.63s
+2023-09-04 00:48:21,925 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-04 01:19:14,538 - root - INFO - 	train loss:1037480.7325  val ap:0.985659  val auc:0.985840
+2023-09-04 01:19:14,538 - root - INFO - 	total time:1670.73s sample time:1.56s prep time:690.29s
+2023-09-04 01:19:14,539 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-04 01:50:07,631 - root - INFO - 	train loss:1038309.3118  val ap:0.988920  val auc:0.988943
+2023-09-04 01:50:07,632 - root - INFO - 	total time:1671.34s sample time:1.58s prep time:689.82s
+2023-09-04 01:50:07,633 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-04 02:21:20,011 - root - INFO - 	train loss:1014318.6893  val ap:0.989096  val auc:0.989084
+2023-09-04 02:21:20,015 - root - INFO - 	total time:1684.80s sample time:1.68s prep time:690.25s
+2023-09-04 02:21:20,020 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-04 02:52:42,140 - root - INFO - 	train loss:1013515.9300  val ap:0.989155  val auc:0.989132
+2023-09-04 02:52:42,141 - root - INFO - 	total time:1694.44s sample time:1.72s prep time:690.48s
+2023-09-04 02:52:42,144 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]
+2023-09-04 03:24:03,432 - root - INFO - 	train loss:1010956.1530  val ap:0.988691  val auc:0.988685
+2023-09-04 03:24:03,433 - root - INFO - 	total time:1694.19s sample time:1.74s prep time:690.21s
+2023-09-04 03:24:03,434 - root - INFO - model c: [Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True), Parameter containing:
+tensor([1.], requires_grad=True)]

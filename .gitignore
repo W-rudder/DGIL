@@ -2,3 +2,4 @@
 /embs
 /models
 *.yaml
+*.csv

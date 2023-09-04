@@ -1,0 +1,1 @@
+2023-08-25 04:38:05,564 - root - INFO - Namespace(config='./config/GIL.yml', data='telecom_new', eval_neg_samples=1, gpu='0', model_name='Lorentz_no_edge', patience=15, rand_edge_features=0, rand_node_features=50, use_inductive=False)

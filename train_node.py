@@ -6,7 +6,7 @@ parser=argparse.ArgumentParser()
 parser.add_argument('--data', type=str, help='dataset name')
 parser.add_argument('--config', type=str, default='', help='path to config file')
 parser.add_argument('--batch_size', type=int, default=600)
-parser.add_argument('--epoch', type=int, default=50)
+parser.add_argument('--epoch', type=int, default=100)
 parser.add_argument('--dim', type=int, default=200)
 parser.add_argument('--lr', type=float, default=0.0001)
 parser.add_argument('--gpu', type=str, default='0', help='which GPU to use')
@@ -21,6 +21,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 if args.data == 'WIKI' or args.data == 'REDDIT':
     args.posneg = True
 
+import logging
 import torch
 import time
 import random
@@ -47,18 +48,33 @@ if int(args.gpu) < 0:
 else:
     device = torch.device('cuda:{}'.format(args.gpu))
 
+### set up logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+fh = logging.FileHandler('log/node_{}_{}.log'.format(args.model.split('/')[-1], time.strftime("%Y-%m-%d-%H-%M", time.localtime())))
+fh.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+ch.setLevel(logging.WARN)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+ch.setFormatter(formatter)
+logger.addHandler(fh)
+logger.addHandler(ch)
+logger.info(args)
+
 ldf = pd.read_csv('DATA/{}/labels.csv'.format(args.data))
 role = ldf['ext_roll'].values
 # train_node_end = ldf[ldf['ext_roll'].gt(0)].index[0]
 # val_node_end = ldf[ldf['ext_roll'].gt(1)].index[0]
 labels = ldf['label'].values.astype(np.int64)
 
-emb_file_name = hashlib.md5(str(torch.load(args.model, map_location=torch.device('cpu'))).encode('utf-8')).hexdigest() + '.pt'
-# emb_file_name = '51e6c96f36aa62350bbf861f3e90a214.pt'
+# emb_file_name = hashlib.md5(str(torch.load(args.model, map_location=torch.device('cpu'))).encode('utf-8')).hexdigest() + '.pt'
+emb_file_name = '6b3a3c3fd87fa373352ac1a541d0470a.pt'
 if not os.path.isdir('embs'):
     os.mkdir('embs')
 if not os.path.isfile('embs/' + emb_file_name):
-    print('Generating temporal embeddings..')
+    logger.info('Generating temporal embeddings..')
 
     node_feats, edge_feats = load_feat(args.data, args.rand_edge_features, args.rand_node_features)
     g, df = load_graph(args.data)
@@ -157,9 +173,9 @@ if not os.path.isfile('embs/' + emb_file_name):
         emb.append(get_node_emb(rows.src.values.astype(np.int32), rows.time.values.astype(np.float32)))
     emb = torch.cat(emb, dim=0)
     torch.save(emb, 'embs/' + emb_file_name)
-    print('Saved to embs/' + emb_file_name)
+    logger.info('Saved to embs/' + emb_file_name)
 else:
-    print('Loading temporal embeddings from embs/' + emb_file_name)
+    logger.info('Loading temporal embeddings from embs/' + emb_file_name)
     node_feats, edge_feats = load_feat(args.data, args.rand_edge_features, args.rand_node_features)
     g, df = load_graph(args.data)
     sample_param, memory_param, gnn_param, train_param = parse_config(args.config)
@@ -177,9 +193,9 @@ else:
     emb = torch.load('embs/' + emb_file_name)
 
 c = model.curvatures[-1].clone().detach().requires_grad_(False)
-print('ori c:', c)
+logger.info('ori c:', c)
 if gnn_param['arch'] == 'GIL_Lorentz':
-    model = LorentzDecoder(emb.shape[1], args.dim, labels.max() + 1, c, True)
+    model = LorentzDecoder(emb.shape[1], args.dim, labels.max() + 1, c, True).to(device)
     no_decay = ['bias', 'scale']
     optimizer_grouped_parameters = [{
         'params': [
@@ -313,7 +329,7 @@ for e in range(args.epoch):
             aucs_mrrs.append(roc_auc_score(label.cpu(), pred[:, 1].cpu()))
         acc = float(torch.tensor(accs).mean())
         auc = float(torch.tensor(aucs_mrrs).mean())
-    print('Epoch: {}\tVal acc: {:.4f}\tVal auc: {:.4f}'.format(e, acc, auc))
+    logger.info('Epoch: {}\tVal acc: {:.4f}\tVal auc: {:.4f}'.format(e, acc, auc))
     if auc > best_auc:
         best_e = e
         best_auc = auc
@@ -322,9 +338,9 @@ for e in range(args.epoch):
     else:
         no_improve += 1
     if no_improve > args.patience:
-        print('No improve over {} epochs, stop training'.format(args.patience))
+        logger.info('No improve over {} epochs, stop training'.format(args.patience))
         break
-print('Loading model at epoch {}...'.format(best_e))
+logger.info('Loading model at epoch {}...'.format(best_e))
 model.load_state_dict(torch.load(save_path))
 minibatch.set_mode('test')
 model.eval()
@@ -385,5 +401,5 @@ df = pd.DataFrame({
     "one_right" : o_r,
     "f_right" : f_r
 })
-print('Testing acc: {:.4f}\tauc: {:.4f}'.format(acc, auc))
+logger.info('Testing acc: {:.4f}\tauc: {:.4f}'.format(acc, auc))
 df.to_csv('./diff_res.csv')

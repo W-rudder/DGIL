@@ -89,14 +89,14 @@ class TransfomerAttentionLayer(torch.nn.Module):
         assert(self.dim_time + self.dim_node_feat + self.dim_edge_feat > 0)
         if b.num_edges() == 0:
             return torch.zeros((b.num_dst_nodes(), self.dim_out)).to(self.device)
-        self_loop = [i for i in range(b.num_dst_nodes())]
+        self_loop = torch.tensor([i for i in range(b.num_dst_nodes())], device=self.device)
         num_dst_nodes = b.num_dst_nodes()
         num_src_nodes = b.num_src_nodes()
         num_edges = len(b.edges()[0])
 
         if self.dim_time > 0:
             time_feat = self.time_enc(b.edata['dt'])
-            zero_time_feat = self.time_enc(torch.zeros(b.num_dst_nodes(), dtype=torch.float32)).to(self.device)
+            zero_time_feat = self.time_enc(torch.zeros(b.num_dst_nodes(), dtype=torch.float32).to(self.device))
         if self.combined:
             Q = torch.zeros((b.num_edges(), self.dim_out)).to(self.device)
             K = torch.zeros((b.num_edges(), self.dim_out)).to(self.device)
@@ -152,15 +152,17 @@ class TransfomerAttentionLayer(torch.nn.Module):
             # print(self.linear_kv.weight.weight, self.linear_kv.weight.bias)
             K = torch.cat([K_ori, Q_ori], dim=0)
             Q = self.w_q(Q)
-            K = self.w_k(K)
+            # do not modify
             V = self.w_v(K)
+            K = self.w_k(K)
+            
 
             Q = torch.reshape(Q, (Q.shape[0], self.num_head, -1))
             K = torch.reshape(K, (K.shape[0], self.num_head, -1))
             V = torch.reshape(V, (V.shape[0], self.num_head, -1))
 
             # b.add_edges(self_loop, self_loop)
-            c = dgl.create_block((torch.cat([b.edges()[0], torch.tensor(self_loop)], dim=-1), torch.cat([b.edges()[1], torch.tensor(self_loop)], dim=-1)), num_src_nodes=num_src_nodes, num_dst_nodes=num_dst_nodes)
+            c = dgl.create_block((torch.cat([b.edges()[0], self_loop], dim=-1), torch.cat([b.edges()[1], self_loop], dim=-1)), num_src_nodes=num_src_nodes, num_dst_nodes=num_dst_nodes)
 
             att = dgl.ops.edge_softmax(c, self.att_act(torch.sum(Q*K, dim=2)))
             att = self.att_dropout(att)
@@ -218,7 +220,7 @@ class HFusion(torch.nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        nn.init.constant_(self.att, 0)
+        nn.init.constant_(self.att, 0.5)
 
     def forward(self, x_h, x_e, project):
         if not project:
@@ -232,6 +234,8 @@ class HFusion(torch.nn.Module):
         x_h = x_h / denom
         # x_e = F.dropout(x_e, p=self.drop, training=self.training)
         if not project:
+            assert torch.isnan(x_h).int().sum() <= 0
+            assert torch.isnan(manifold.logmap0(x_h)).int().sum() <= 0
             return manifold.logmap0(x_h)
         else:
             return x_h
@@ -254,6 +258,7 @@ class EFusion(torch.nn.Module):
             dist = (x_h - x_e).pow(2).sum(dim=-1) * self.att
             x_h = dist.view([-1, 1]) * x_h
         else:
+            assert torch.isnan(manifold.logmap0(x_h)).int().sum() <= 0
             dist = (manifold.logmap0(x_h) - x_e).pow(2).sum(dim=-1) * self.att
             x_h = dist.view([-1, 1]) * manifold.logmap0(x_h)
         # x_h = F.dropout(x_h, p=self.drop, training=self.training)
@@ -426,11 +431,14 @@ class LinkDecoder_Lorentz(nn.Module):
         super(LinkDecoder_Lorentz, self).__init__()
         self.manifold = getattr(manifolds, manifold_name)()
         self.dc = FermiDiracDecoder()
-        self.w_e = nn.Linear(dim_out, 1, bias=False)
-        # self.w_h = nn.Linear(dim_out, 1, bias=False)
-        self.fc_src = nn.Linear(dim_out, dim_out)
-        self.fc_dst = nn.Linear(dim_out, dim_out)
+        self.w_e = nn.Linear(dim_out * 2, 1)
+        # self.w_e = nn.Linear(dim_out, 1)
+        # self.w_h = nn.Linear(dim_out * 2, 1)
+        self.fc_src = nn.Linear(dim_out * 2, dim_out)
+        self.fc_src_h = nn.Linear(dim_out * 2, dim_out)
+        # self.fc_dst = nn.Linear(dim_out, dim_out)
         self.fc_out = nn.Linear(dim_out, 1)
+        self.fc_out_h = nn.Linear(dim_out, 1)
         self.drop_e = 0
         self.drop_h = 0
         self.c = torch.tensor([1.0])
@@ -440,6 +448,10 @@ class LinkDecoder_Lorentz(nn.Module):
     def reset_param(self):
         self.w_e.reset_parameters()
         # self.w_h.reset_parameters()
+        self.fc_src.reset_parameters()
+        self.fc_src_h.reset_parameters()
+        self.fc_out.reset_parameters()
+        self.fc_out_h.reset_parameters()
 
     def decode(self, h, mode, neg_samples=1):
         num_edge = h[0].shape[0] // (neg_samples + 2)
@@ -448,38 +460,44 @@ class LinkDecoder_Lorentz(nn.Module):
                 # pos instancs
                 emb_in = h[0][:num_edge, :]
                 emb_out = h[0][num_edge:2 * num_edge, :]
-                emb_in_e = self.fc_src(h[1][:num_edge, :])
-                emb_out_e = self.fc_dst(h[1][num_edge:2 * num_edge, :])
+                emb_in_e = h[1][:num_edge, :]
+                emb_out_e = h[1][num_edge:2 * num_edge, :]
             else:
                 # neg instance
                 emb_in = h[0][:num_edge, :].tile(neg_samples, 1)
                 emb_out = h[0][2 * num_edge:, :]
-                emb_in_e = self.fc_src(h[1][:num_edge, :]).tile(neg_samples, 1)
-                emb_out_e = self.fc_dst(h[1][2 * num_edge:, :])
+                emb_in_e = h[1][:num_edge, :].tile(neg_samples, 1)
+                emb_out_e = h[1][2 * num_edge:, :]
 
             "compute hyperbolic dist"
-            sqdist = self.manifold.sqdist(emb_in, emb_out, self.c)
-            probs_h = self.dc.forward(sqdist)
+            # sqdist = self.manifold.sqdist(emb_in, emb_out, self.c)
+            # # probs_h = torch.sigmoid(sqdist.view(-1))
+            # probs_h = self.dc.forward(sqdist)
+            emb_in, emb_out = self.manifold.logmap0(emb_in), self.manifold.logmap0(emb_out)
+            h_edge = torch.nn.functional.relu(self.fc_src_h(torch.cat([emb_in, emb_out], dim=-1)))
+            probs_h = torch.sigmoid(self.fc_out_h(h_edge).view(-1))
 
             "compute dist in Euclidean"
-            h_edge = torch.nn.functional.relu(emb_in_e + emb_out_e)
-            probs_e = torch.sigmoid(self.fc_out(h_edge).view(-1))
+            e_edge = torch.nn.functional.relu(self.fc_src(torch.cat([emb_in_e, emb_out_e], dim=-1)))
+            probs_e = torch.sigmoid(self.fc_out(e_edge).view(-1))
 
             # sub
-            w_e = torch.sigmoid(self.w_e(emb_in_e + emb_out_e).view(-1))
+            w_e = torch.sigmoid(self.w_e(torch.cat([emb_in_e, emb_out_e], dim=-1)).view(-1))
             w_h = 1 - w_e
+            # w_h = torch.sigmoid(self.w_h(torch.cat([emb_in, emb_out], dim=-1)).view(-1))
             # w_e = torch.tensor([0.5])
             # w_h = torch.tensor([0.5])
             w = torch.cat([w_h.view(-1, 1), w_e.view(-1, 1)], dim=-1)
             # w = F.normalize(w, p=1, dim=-1)
 
             probs = w[:, 0] * probs_h + w[:, 1] * probs_e
-            # probs = probs_e
+            # probs = probs_h
             assert torch.min(probs) >= 0
             assert torch.max(probs) <= 1
 
-            embeddings_tan = self.manifold.logmap0(emb_in)
-            u_norm = ((1e-6 + embeddings_tan.pow(2).sum(dim=1)).mean()).sqrt()
+            # embeddings_tan = self.manifold.logmap0(emb_in)
+            # u_norm = ((1e-6 + embeddings_tan.pow(2).sum(dim=1)).mean()).sqrt()
+            u_norm = 1
         # else:
         #     emb_in = h[idx[:, 0], :]
         #     emb_out = h[idx[:, 1], :]
@@ -488,11 +506,11 @@ class LinkDecoder_Lorentz(nn.Module):
         #     probs = self.dc.forward(sqdist)
         # print(sqdist)
         # return -sqdist
-        return probs, 1 / u_norm
+        return probs, u_norm
 
     def forward(self, h, neg_samples=1):
         pos_scores, pos_regular_loss = self.decode(h, mode='pos', neg_samples=neg_samples)
         neg_scores, neg_regular_loss = self.decode(h, mode='neg', neg_samples=neg_samples)
-        loss = self.loss(pos_scores, torch.ones_like(pos_scores)) + self.loss(neg_scores, torch.zeros_like(neg_scores)) + 0 * pos_regular_loss
+        loss = self.loss(pos_scores, torch.ones_like(pos_scores)) + self.loss(neg_scores, torch.zeros_like(neg_scores))
 
         return pos_scores, neg_scores, loss

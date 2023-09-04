@@ -150,6 +150,31 @@ class ParallelSampler
             // _nodes.push_back(100);
         }
 
+        inline void add_fake_neighbor(std::vector<NodeIDType> *_row, std::vector<NodeIDType> *_col,
+                                 std::vector<EdgeIDType> *_eid, std::vector<TimeStampType> *_ts,
+                                 std::vector<TimeStampType> *_dts, std::vector<NodeIDType> *_nodes, 
+                                 TimeStampType &src_ts, int &row_id)
+        {
+            // 3905402 max eid
+            _row->push_back(row_id);
+            _col->push_back(_nodes->size());
+            _eid->push_back(3905403);
+            if (prop_time)
+                _ts->push_back(src_ts);
+            else
+                _ts->push_back(0);
+            _dts->push_back(src_ts - src_ts);
+            _nodes->push_back(0);
+            // _row.push_back(0);
+            // _col.push_back(0);
+            // _eid.push_back(0);
+            // if (prop_time)
+            //     _ts.push_back(src_ts);
+            // else
+            //     _ts.push_back(10000);
+            // _nodes.push_back(100);
+        }
+
         inline void combine_coo(TemporalGraphBlock &_ret, std::vector<NodeIDType> **_row, 
                                 std::vector<NodeIDType> **_col, 
                                 std::vector<EdgeIDType> **_eid, 
@@ -315,7 +340,12 @@ class ParallelSampler
                                                     _dts[tid], _nodes[tid], k, nts, _out_node[tid]);
                                     }
                                 }
-                            }                    
+                            }
+                            // else
+                            // {
+                            //     add_fake_neighbor(_row[tid], _col[tid], _eid[tid], _ts[tid], 
+                            //                         _dts[tid], _nodes[tid], nts, _out_node[tid]);
+                            // } 
                         }
                         else
                         {
@@ -332,6 +362,11 @@ class ParallelSampler
                                     }
                                 }
                             }
+                            // else
+                            // {
+                            //     add_fake_neighbor(_row[tid], _col[tid], _eid[tid], _ts[tid], 
+                            //                         _dts[tid], _nodes[tid], nts, _out_node[tid]);
+                            // } 
                         }
                         _out_node[tid] += 1;
                         if (tid == 0)
