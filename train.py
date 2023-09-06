@@ -254,9 +254,9 @@ for e in range(train_param['epoch']):
         mailbox.reset()
         model.memory_updater.last_updated_nid = None
 
+    logger.info('Epoch {:d}:'.format(e))
     pbar = tqdm(total=len(df[:train_edge_end].groupby(group_indexes[random.randint(0, len(group_indexes) - 1)])))
     pbar.set_description('Epoch {:d}:'.format(e))
-    logger.info('Epoch {:d}:'.format(e))
     for _, rows in df[:train_edge_end].groupby(group_indexes[random.randint(0, len(group_indexes) - 1)]):
         t_tot_s = time.time()
         root_nodes = np.concatenate([rows.src.values, rows.dst.values, neg_link_sampler.sample(len(rows))]).astype(np.int32)

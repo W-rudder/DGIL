@@ -69,8 +69,8 @@ role = ldf['ext_roll'].values
 # val_node_end = ldf[ldf['ext_roll'].gt(1)].index[0]
 labels = ldf['label'].values.astype(np.int64)
 
-# emb_file_name = hashlib.md5(str(torch.load(args.model, map_location=torch.device('cpu'))).encode('utf-8')).hexdigest() + '.pt'
-emb_file_name = '6b3a3c3fd87fa373352ac1a541d0470a.pt'
+emb_file_name = hashlib.md5(str(torch.load(args.model, map_location=torch.device('cpu'))).encode('utf-8')).hexdigest() + '.pt'
+# emb_file_name = '6b3a3c3fd87fa373352ac1a541d0470a.pt'
 if not os.path.isdir('embs'):
     os.mkdir('embs')
 if not os.path.isfile('embs/' + emb_file_name):
@@ -101,11 +101,12 @@ if not os.path.isfile('embs/' + emb_file_name):
             mailbox.move_to_gpu()
 
     sampler = None
+    has_ngh = np.load("./node_ngh.npy")
     if not ('no_sample' in sample_param and sample_param['no_sample']):
         sampler = ParallelSampler(g['indptr'], g['indices'], g['eid'], g['ts'].astype(np.float32),
                                 sample_param['num_thread'], 1, sample_param['layer'], sample_param['neighbor'],
                                 sample_param['strategy']=='recent', sample_param['prop_time'],
-                                sample_param['history'], float(sample_param['duration']))
+                                sample_param['history'], float(sample_param['duration']), has_ngh)
     neg_link_sampler = NegLinkSampler(g['indptr'].shape[0] - 1)
 
     model.load_state_dict(torch.load(args.model))
@@ -193,7 +194,7 @@ else:
     emb = torch.load('embs/' + emb_file_name)
 
 c = model.curvatures[-1].clone().detach().requires_grad_(False)
-logger.info('ori c:', c)
+# logger.info('ori c:', c)
 if gnn_param['arch'] == 'GIL_Lorentz':
     model = LorentzDecoder(emb.shape[1], args.dim, labels.max() + 1, c, True).to(device)
     no_decay = ['bias', 'scale']
@@ -329,7 +330,7 @@ for e in range(args.epoch):
             aucs_mrrs.append(roc_auc_score(label.cpu(), pred[:, 1].cpu()))
         acc = float(torch.tensor(accs).mean())
         auc = float(torch.tensor(aucs_mrrs).mean())
-    logger.info('Epoch: {}\tVal acc: {:.4f}\tVal auc: {:.4f}'.format(e, acc, auc))
+    logger.info('Epoch: {}\tVal acc: {:.4f}\tVal auc: {:.4f}\tno improve:{}'.format(e, acc, auc, no_improve))
     if auc > best_auc:
         best_e = e
         best_auc = auc
