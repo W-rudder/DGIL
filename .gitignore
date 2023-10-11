@@ -1,7 +1,8 @@
 /DATA
 /embs
 /log
+/build
 /models
 *.yaml
 *.csv
-*.pyc
+**/__pycache__

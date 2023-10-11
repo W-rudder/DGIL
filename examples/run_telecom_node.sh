@@ -1,5 +1,5 @@
 #!/bin/bash
-python train_node_t.py \
+python train_node.py \
   --data REDDIT \
   --config ./config/GIL.yml \
   --model ./models/rdt_no_fusion_nf.pkl \
