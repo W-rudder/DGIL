@@ -353,7 +353,9 @@ for e in range(args.epoch):
                 t_aucs_mrrs.append(roc_auc_score(label.cpu(), pred[:, 1].cpu()))
             t_acc = float(torch.tensor(accs).mean())
             t_auc = float(torch.tensor(aucs_mrrs).mean())
-    logger.info('Epoch: {}\tVal acc: {:.4f}\tVal auc: {:.4f}\tno improve:{}\tTesting acc: {:.4f}\tauc: {:.4f}'.format(e, acc, auc, no_improve, t_acc, t_auc))
+        logger.info('Epoch: {}\tVal acc: {:.4f}\tVal auc: {:.4f}\tno improve:{}\tTesting acc: {:.4f}\tauc: {:.4f}'.format(e, acc, auc, no_improve, t_acc, t_auc))
+    else:
+        logger.info('Epoch: {}\tVal acc: {:.4f}\tVal auc: {:.4f}\tno improve:{}'.format(e, acc, auc, no_improve))
     if auc > best_auc:
         best_e = e
         best_auc = auc
