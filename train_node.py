@@ -1,6 +1,7 @@
 import argparse
 import os
 import hashlib
+import copy
 
 parser=argparse.ArgumentParser()
 parser.add_argument('--data', type=str, help='dataset name')
@@ -361,6 +362,8 @@ for e in range(args.epoch):
         best_auc = auc
         no_improve = 0
         torch.save(model.state_dict(), save_path)
+        if e == 50:
+            model1 = copy.deepcopy(model)
     else:
         no_improve += 1
     if no_improve > args.patience:
