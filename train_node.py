@@ -5,10 +5,10 @@ import hashlib
 parser=argparse.ArgumentParser()
 parser.add_argument('--data', type=str, help='dataset name')
 parser.add_argument('--config', type=str, default='', help='path to config file')
-parser.add_argument('--batch_size', type=int, default=600)
+parser.add_argument('--batch_size', type=int, default=4000)
 parser.add_argument('--epoch', type=int, default=100)
-parser.add_argument('--dim', type=int, default=200)
-parser.add_argument('--lr', type=float, default=0.0001)
+parser.add_argument('--dim', type=int, default=100)
+parser.add_argument('--lr', type=float, default=0.001)
 parser.add_argument('--gpu', type=str, default='0', help='which GPU to use')
 parser.add_argument('--model', type=str, default='', help='name of stored model to load')
 parser.add_argument('--rand_node_features', type=int, default=0, help='use random node featrues')
@@ -171,7 +171,7 @@ if not os.path.isfile('embs/' + emb_file_name):
 
     emb = list()
     for _, rows in tqdm(ldf.groupby(ldf.index // args.batch_size)):
-        emb.append(get_node_emb(rows.src.values.astype(np.int32), rows.time.values.astype(np.float32)))
+        emb.append(get_node_emb(rows.node.values.astype(np.int32), rows.time.values.astype(np.float32)))
     emb = torch.cat(emb, dim=0)
     torch.save(emb, 'embs/' + emb_file_name)
     logger.info('Saved to embs/' + emb_file_name)

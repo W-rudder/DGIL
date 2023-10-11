@@ -15,7 +15,7 @@ def load_feat(d, rand_de=0, rand_dn=0):
     edge_feats = None
     if os.path.exists('DATA/{}/edge_features.pt'.format(d)):
         edge_feats = torch.load('DATA/{}/edge_features.pt'.format(d))
-        edge_feats = torch.cat([edge_feats, torch.tensor([[1.0]])], dim=0)
+       # edge_feats = torch.cat([edge_feats, torch.tensor([[1.0]])], dim=0)
         if edge_feats.dtype == torch.bool:
             edge_feats = edge_feats.type(torch.float32)
     if rand_de > 0:
@@ -26,8 +26,8 @@ def load_feat(d, rand_de=0, rand_dn=0):
     if rand_dn > 0:
         if d == 'LASTFM':
             node_feats = torch.randn(1980, rand_dn)
-        elif d == 'MOOC':
-            node_feats = torch.randn(7144, rand_dn)
+        elif d == 'mooc':
+            node_feats = torch.randn(7145, rand_dn)
         elif d in ['telecom', 'telecom_new']:
             node_feats = torch.randn(1948069, rand_dn)
             # node_feats = torch.nn.Embedding(num_embeddings=1948069,
@@ -37,11 +37,16 @@ def load_feat(d, rand_de=0, rand_dn=0):
             # node_feats.weight = torch.nn.Parameter(node_feats.state_dict()['weight'])
         elif d == 'WIKI':
             node_feats = torch.randn(9228, rand_dn)
+        elif d == 'REDDIT':
+            node_feats = torch.randn(10985, rand_dn)
     return node_feats, edge_feats
 
 def load_graph(d):
     df = pd.read_csv('DATA/{}/edges.csv'.format(d))
-    g = np.load('DATA/{}/new_ext_full.npz'.format(d))
+    if d == 'telecom_new':
+        g = np.load('DATA/{}/new_ext_full.npz'.format(d))
+    else:
+        g = np.load('DATA/{}/ext_full.npz'.format(d))
     print(df.dst.max(), df.src.max())
     return g, df
 
