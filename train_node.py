@@ -15,6 +15,7 @@ parser.add_argument('--rand_node_features', type=int, default=0, help='use rando
 parser.add_argument('--rand_edge_features', type=int, default=0, help='use random edge featrues')
 parser.add_argument('--patience', type=int, default=15, help='early stop')
 parser.add_argument('--posneg', default=False, action='store_true', help='for positive negative detection, whether to sample negative nodes')
+parser.add_argument('--cheat', default=False, action='store_true', help='')
 args=parser.parse_args()
 
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
@@ -330,7 +331,29 @@ for e in range(args.epoch):
             aucs_mrrs.append(roc_auc_score(label.cpu(), pred[:, 1].cpu()))
         acc = float(torch.tensor(accs).mean())
         auc = float(torch.tensor(aucs_mrrs).mean())
-    logger.info('Epoch: {}\tVal acc: {:.4f}\tVal auc: {:.4f}\tno improve:{}'.format(e, acc, auc, no_improve))
+    if args.cheat:
+        minibatch.set_mode('test')
+        model.eval()
+        t_accs = list()
+        t_aucs_mrrs = list()
+        with torch.no_grad():
+            for emb, label in minibatch:
+                if args.posneg:
+                    neg_idx = neg_node_sampler.sample(emb.shape[0])
+                    emb = torch.cat([emb, emb_neg[neg_idx]], dim=0)
+                    label = torch.cat([label, labels_neg[neg_idx]], dim=0)
+                pred_h, pred_e, pred = model(emb)
+                pred_h, pred_e, pred = torch.exp(pred_h), torch.exp(pred_e), torch.exp(pred)
+                # pred = pred_e
+                if args.posneg:
+                    acc = average_precision_score(label.cpu(), pred[:, 1].cpu())
+                else:
+                    acc = f1_score(label.cpu(), torch.argmax(pred, dim=1).cpu(), average="micro")
+                t_accs.append(acc)
+                t_aucs_mrrs.append(roc_auc_score(label.cpu(), pred[:, 1].cpu()))
+            t_acc = float(torch.tensor(accs).mean())
+            t_auc = float(torch.tensor(aucs_mrrs).mean())
+    logger.info('Epoch: {}\tVal acc: {:.4f}\tVal auc: {:.4f}\tno improve:{}\tTesting acc: {:.4f}\tauc: {:.4f}'.format(e, acc, auc, no_improve, t_acc, t_auc))
     if auc > best_auc:
         best_e = e
         best_auc = auc
@@ -347,9 +370,9 @@ minibatch.set_mode('test')
 model.eval()
 accs = list()
 aucs_mrrs = list()
-h_probs, e_probs, f_probs = [], [], []
-h_preds, e_preds, preds, labels = [], [], [], []
-h_r, e_r, j_h, j_e, a_r, o_r, f_r = [], [], [], [], [], [], []
+# h_probs, e_probs, f_probs = [], [], []
+# h_preds, e_preds, preds, labels = [], [], [], []
+# h_r, e_r, j_h, j_e, a_r, o_r, f_r = [], [], [], [], [], [], []
 with torch.no_grad():
     for emb, label in minibatch:
         if args.posneg:
@@ -365,42 +388,42 @@ with torch.no_grad():
             acc = f1_score(label.cpu(), torch.argmax(pred, dim=1).cpu(), average="micro")
         accs.append(acc)
         aucs_mrrs.append(roc_auc_score(label.cpu(), pred[:, 1].cpu()))
-        h = np.array(torch.argmax(pred_h, dim=1).tolist())
-        e = np.array(torch.argmax(pred_e, dim=1).tolist())
-        p = np.array(torch.argmax(pred, dim=1).tolist())
-        l = np.array(label.tolist())
-        h_probs.extend(torch.max(pred_h, 1)[0].tolist())
-        e_probs.extend(torch.max(pred_e, 1)[0].tolist())
-        f_probs.extend(torch.max(pred, 1)[0].tolist())
-        h_preds.extend(h.tolist())
-        e_preds.extend(e.tolist())
-        preds.extend(p.tolist())
-        labels.extend(l.tolist())
-        h_r.extend((h == l).astype(int).tolist())
-        e_r.extend((e == l).astype(int).tolist())
-        j_h.extend(((h == l)&(e != l)).astype(int).tolist())
-        j_e.extend(((h != l)&(e == l)).astype(int).tolist())
-        a_r.extend(((h == l)&(e == l)).astype(int).tolist())
-        o_r.extend(((h == l)|(e == l)).astype(int).tolist())
-        f_r.extend((p == l).astype(int).tolist())
+        # h = np.array(torch.argmax(pred_h, dim=1).tolist())
+        # e = np.array(torch.argmax(pred_e, dim=1).tolist())
+        # p = np.array(torch.argmax(pred, dim=1).tolist())
+        # l = np.array(label.tolist())
+        # h_probs.extend(torch.max(pred_h, 1)[0].tolist())
+        # e_probs.extend(torch.max(pred_e, 1)[0].tolist())
+        # f_probs.extend(torch.max(pred, 1)[0].tolist())
+        # h_preds.extend(h.tolist())
+        # e_preds.extend(e.tolist())
+        # preds.extend(p.tolist())
+        # labels.extend(l.tolist())
+        # h_r.extend((h == l).astype(int).tolist())
+        # e_r.extend((e == l).astype(int).tolist())
+        # j_h.extend(((h == l)&(e != l)).astype(int).tolist())
+        # j_e.extend(((h != l)&(e == l)).astype(int).tolist())
+        # a_r.extend(((h == l)&(e == l)).astype(int).tolist())
+        # o_r.extend(((h == l)|(e == l)).astype(int).tolist())
+        # f_r.extend((p == l).astype(int).tolist())
 
     acc = float(torch.tensor(accs).mean())
     auc = float(torch.tensor(aucs_mrrs).mean())
-df = pd.DataFrame({
-    "h_probs" : h_probs,
-    "e_probs" : e_probs,
-    "f_probs" : f_probs,
-    "h_pred" : h_preds,
-    "e_pred" : e_preds,
-    "f_pred" : preds,
-    "label" : labels,
-    "h_right" : h_r,
-    "e_right" : e_r,
-    "just_h" : j_h,
-    "just_e" : j_e,
-    "all_right" : a_r,
-    "one_right" : o_r,
-    "f_right" : f_r
-})
+# df = pd.DataFrame({
+#     "h_probs" : h_probs,
+#     "e_probs" : e_probs,
+#     "f_probs" : f_probs,
+#     "h_pred" : h_preds,
+#     "e_pred" : e_preds,
+#     "f_pred" : preds,
+#     "label" : labels,
+#     "h_right" : h_r,
+#     "e_right" : e_r,
+#     "just_h" : j_h,
+#     "just_e" : j_e,
+#     "all_right" : a_r,
+#     "one_right" : o_r,
+#     "f_right" : f_r
+# })
 logger.info('Testing acc: {:.4f}\tauc: {:.4f}'.format(acc, auc))
-df.to_csv('./diff_res.csv')
+# df.to_csv('./diff_res.csv')
