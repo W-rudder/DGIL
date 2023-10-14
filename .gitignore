@@ -1,9 +1,11 @@
-/DATA
-/embs
-/log
-/build
-/models
+DATA/
+embs/
+log/
+build/
+models/
 *.yaml
 *.csv
 **/__pycache__
-..DS_Store
+.DS_Store
+**.so
+.ipynb_checkpoints/

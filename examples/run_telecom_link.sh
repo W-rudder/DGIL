@@ -1,8 +1,8 @@
 #!/bin/bash
 python train.py \
-  --data REDDIT \
+  --data Dgraph \
   --config ./config/GIL.yml \
-  --gpu 0 \
-  --model_name rdt_no_fusion_nf \
-  --rand_node_features 50 \
+  --gpu -1 \
+  --model_name fin_no_fusion \
+  # --rand_node_features 50 \
   # --rand_edge_features 20
