@@ -18,6 +18,11 @@ def load_feat(d, rand_de=0, rand_dn=0):
        # edge_feats = torch.cat([edge_feats, torch.tensor([[1.0]])], dim=0)
         if edge_feats.dtype == torch.bool:
             edge_feats = edge_feats.type(torch.float32)
+        if d == 'Dgraph':
+            type_emb = torch.nn.Embedding(num_embeddings=12, embedding_dim=50)
+            edge_feats = type_emb(edge_feats)
+            # edge_feats = torch.nn.functional.one_hot(edge_feats)
+            edge_feats = edge_feats.squeeze(1)
     if rand_de > 0:
         if d == 'LASTFM':
             edge_feats = torch.randn(1293103, rand_de)
@@ -39,6 +44,8 @@ def load_feat(d, rand_de=0, rand_dn=0):
             node_feats = torch.randn(9228, rand_dn)
         elif d == 'REDDIT':
             node_feats = torch.randn(10985, rand_dn)
+        elif d == 'Dgraph':
+            node_feats = torch.randn(3700551, rand_dn)
     return node_feats, edge_feats
 
 def load_graph(d):
