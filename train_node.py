@@ -102,7 +102,11 @@ if not os.path.isfile('embs/' + emb_file_name):
             mailbox.move_to_gpu()
 
     sampler = None
-    has_ngh = np.load("./node_ngh.npy")
+    if args.data == 'telecom_new':
+        has_ngh = np.load("./DATA/{}/node_ngh.npy".format(args.data))
+    else:
+        print(g['indptr'].shape[0])
+        has_ngh = np.zeros(g['indptr'].shape[0], dtype=np.int32)
     if not ('no_sample' in sample_param and sample_param['no_sample']):
         sampler = ParallelSampler(g['indptr'], g['indices'], g['eid'], g['ts'].astype(np.float32),
                                 sample_param['num_thread'], 1, sample_param['layer'], sample_param['neighbor'],
